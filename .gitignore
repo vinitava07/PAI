@@ -1,3 +1,8 @@
+#meu gitignore
+
+patient-clinical-data.xlsx
+paper_patches
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
