@@ -13,6 +13,9 @@ dependencies = [
     "pillow>=11.2.1",
     "pyqt5>=5.15.11",
     "scikit-image>=0.25.2",
+    "scikit-learn>=1.6.1",
     "scipy>=1.15.3",
+    "seaborn>=0.13.2",
     "tk>=0.1.0",
+    "xgboost>=3.0.2",
 ]
