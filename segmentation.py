@@ -14,6 +14,17 @@ class HENucleusSegmentation:
     Otimizada para detectar núcleos (estruturas roxas/azuis)
     """
 
+    # Adicione esta função para filtrar melhor:
+    def is_valid_nucleus(self, region):
+        # Critérios mais rigorosos
+        circularity = 4 * np.pi * region.area / (region.perimeter ** 2)
+        return (
+                15 <= region.area <= 400 and  # Área razoável
+                circularity >= 0.3 and  # Não muito irregular
+                region.eccentricity <= 0.94 and  # Não muito alongado
+                region.solidity >= 0.1  # Não muito côncavo
+        )
+
     def __init__(self):
         self.original_image = None
         self.hematoxylin_channel = None
@@ -74,6 +85,7 @@ class HENucleusSegmentation:
 
         return self.hematoxylin_channel
 
+
     def segment_nuclei_he(self, hematoxylin_channel):
         """
         Segmenta núcleos do canal de hematoxilina
@@ -88,15 +100,15 @@ class HENucleusSegmentation:
         print("Segmentando núcleos...")
 
         # 1. Suavização para reduzir ruído
-        smoothed = cv2.GaussianBlur(hematoxylin_channel, (3, 3), 0)
+        smoothed = cv2.medianBlur(hematoxylin_channel, 3)
 
         # 2. Limiarização adaptativa
         # Núcleos são regiões mais escuras (mais hematoxilina)
         binary = cv2.adaptiveThreshold(smoothed, 255,
                                      cv2.ADAPTIVE_THRESH_MEAN_C,
                                      cv2.THRESH_BINARY,
-                                     blockSize=7,
-                                     C=-3)
+                                     blockSize=11,
+                                     C=-2)
 
         # Inverte se necessário (queremos núcleos em branco)
         if np.mean(binary) > 127:
@@ -104,28 +116,30 @@ class HENucleusSegmentation:
 
         # 3. Operações morfológicas para limpar
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        kernel_cross = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
 
         # Remove ruído pequeno
         cleaned = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=2)
 
+        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_ERODE, kernel, iterations=1)
         # Fecha buracos nos núcleos
-        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel, iterations=1)
+        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_CLOSE, kernel_cross, iterations=1)
+
+        cleaned = cv2.morphologyEx(cleaned, cv2.MORPH_OPEN, kernel_cross, iterations=2)
 
         # 4. Remove objetos muito pequenos ou muito grandes
         # Converte para booleano para skimage
         mask_bool = cleaned.astype(bool)
 
         # Remove objetos pequenos (ruído)
-        mask_bool = morphology.remove_small_objects(mask_bool, min_size=23)
+        # mask_bool = morphology.remove_small_objects(mask_bool, min_size=14)
 
         # Remove objetos muito grandes (artefatos)
         labeled_temp = measure.label(mask_bool)
         regions = measure.regionprops(labeled_temp)
 
-        max_area = 200  # Ajuste conforme necessário
-        eccentricity = 0.9
         for region in regions:
-            if region.area > max_area or region.eccentricity > eccentricity:
+            if not self.is_valid_nucleus(region):
                 mask_bool[labeled_temp == region.label] = False
 
         # 5. Watershed para separar núcleos tocantes
