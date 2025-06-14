@@ -507,7 +507,7 @@ if __name__ == "__main__":
     segmenter = HENucleusSegmentation()
 
     # Substitua pelo caminho da sua imagem
-    image_path = "/home/leonardo/Documents/PUC/6. Semestre VI/Processamento e Análise de Imagens/PAI/paper_patches/patches/1/1_0_0_0.jpg"
+    image_path = "/Users/leonardo/Documents/PUC/6. Semestre VI/Processamento e Análise de Imagens/TP/PAI/patches/1/1_0_0_0.jpg"
 
     # Processa a imagem
     features, stats, labeled = segmenter.process_image(
