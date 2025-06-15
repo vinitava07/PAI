@@ -596,51 +596,61 @@ if __name__ == "__main__":
     # print(image_paths)
 
     df = pd.read_csv(clinical_data_path)
-    status_aln = df['ALN status']
-    print(status_aln)
-
-    # Processa a imagem
-    # features, stats, labeled = segmenter.process_image(
-    #     image_paths[104],
-    #     visualize=True,
-    # )
-    # print(labeled)
-    type_color = {
-        'N0': 'P',
-        'N+(1-2)': 'V',
-        'N+(>2)': 'A'
-    }
-
     general_stats = {"area": [[], [], []], "circularity": [[], [], []], "eccentricity": [[],[], []], "normalized_nn_distance": [[], [], []]}
     lista = [0] * 1058
     count = 0
+
+    rows = []
 
     #Processa todas as imagens e cria um csv com os atributos dela
     for image in image_paths:
         patient_id = Path(image).parent.name
         patient_class = df.loc[df['Patient ID'] == int(patient_id), 'ALN status'].values[0]
-        if count < 10:
-            features, stats, labeled = segmenter.process_image(
-            image,
-            visualize=False
-            )
-            if patient_class == "N0":
-                general_stats["area"][0].append(stats["area"]['mean'])
-                general_stats["circularity"][0].append(stats["circularity"]['mean'])
-                general_stats["normalized_nn_distance"][0].append(stats["normalized_nn_distance"]['mean'])
-                general_stats["eccentricity"][0].append(stats["eccentricity"]['mean'])
-            elif patient_class == "N+(>2)":
-                general_stats["area"][2].append(stats["area"]['mean'])
-                general_stats["circularity"][2].append(stats["circularity"]['mean'])
-                general_stats["normalized_nn_distance"][2].append(stats["normalized_nn_distance"]['mean'])
-                general_stats["eccentricity"][2].append(stats["eccentricity"]['mean'])
-            else:
-                general_stats["area"][1].append(stats["area"]['mean'])
-                general_stats["circularity"][1].append(stats["circularity"]['mean'])
-                general_stats["normalized_nn_distance"][1].append(stats["normalized_nn_distance"]['mean'])
-                general_stats["eccentricity"][1].append(stats["eccentricity"]['mean'])
+        features_df, stats, labeled = segmenter.process_image(image, visualize=False)
+        num_nuclei = len(features_df)
+        area_mean = features_df['area'].mean()
+        area_std = features_df['area'].std()
+        circ_mean = features_df['circularity'].mean()
+        circ_std = features_df['circularity'].std()
+        ecc_mean = features_df['eccentricity'].mean()
+        ecc_std = features_df['eccentricity'].std()
+        nnd_mean = features_df['normalized_nn_distance'].mean()
+        nnd_std = features_df['normalized_nn_distance'].std()
+        rows.append({
+        'patient_id': patient_id,
+        'num_nuclei': num_nuclei,
+        'area_mean': area_mean,
+        'area_std': area_std,
+        'circularity_mean': circ_mean,
+        'circularity_std': circ_std,
+        'eccentricity_mean': ecc_mean,
+        'eccentricity_std': ecc_std,
+        'normalized_nn_distance_mean': nnd_mean,
+        'normalized_nn_distance_std': nnd_std
+        })
+        if patient_class == "N0":
+            general_stats["area"][0].append(stats["area"]['mean'])
+            general_stats["circularity"][0].append(stats["circularity"]['mean'])
+            general_stats["normalized_nn_distance"][0].append(stats["normalized_nn_distance"]['mean'])
+            general_stats["eccentricity"][0].append(stats["eccentricity"]['mean'])
+        elif patient_class == "N+(>2)":
+            general_stats["area"][2].append(stats["area"]['mean'])
+            general_stats["circularity"][2].append(stats["circularity"]['mean'])
+            general_stats["normalized_nn_distance"][2].append(stats["normalized_nn_distance"]['mean'])
+            general_stats["eccentricity"][2].append(stats["eccentricity"]['mean'])
+        else:
+            general_stats["area"][1].append(stats["area"]['mean'])
+            general_stats["circularity"][1].append(stats["circularity"]['mean'])
+            general_stats["normalized_nn_distance"][1].append(stats["normalized_nn_distance"]['mean'])
+            general_stats["eccentricity"][1].append(stats["eccentricity"]['mean'])
+
+    
         count+=1
-    print(general_stats)
+    # print(general_stats)
+
+    df_stats = pd.DataFrame(rows)
+    df_stats.to_csv('stats_imagens.csv', index=False)
+    print(f"Salvo {len(df_stats)} linhas em stats_imagens.csv")
 
     colors = ['black', 'blue', 'red']
 
