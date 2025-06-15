@@ -12,7 +12,9 @@ else:
     print("Executando em CPU")
 
 from inception_pipeline import InceptionV3ALNClassifier
-
+base_dir = Path(__file__).parent.parent
+patches_dir = base_dir / "patches"
+clinical_data_path = base_dir / "patient-clinical-data.csv"
 def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_epochs=10, batch_size=8):
     """
     Executa treinamento completo do Inception V3 pré-treinado
@@ -27,12 +29,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
     print("="*80)
     print("🧠 TREINAMENTO INCEPTION V3 PRÉ-TREINADO - CLASSIFICAÇÃO ALN")
     print("="*80)
-    
-    # Configuração de caminhos
-    base_dir = Path(__file__).parent
-    patches_dir = base_dir / "patches"
-    clinical_data_path = base_dir / "patient-clinical-data.csv"
-    
+        
     # Verifica se arquivos existem
     if not patches_dir.exists():
         print(f"❌ Diretório de patches não encontrado: {patches_dir}")
@@ -166,11 +163,6 @@ def run_inception_v3_evaluation(model_path, max_patches_per_patient=None):
     print("🔍 AVALIAÇÃO INCEPTION V3 - MODELO PRÉ-TREINADO")
     print("="*80)
     
-    # Configuração de caminhos
-    base_dir = Path(__file__).parent
-    patches_dir = base_dir / "patches"
-    clinical_data_path = base_dir / "patient-clinical-data.csv"
-    
     try:
         # Inicializa classificador
         classifier = InceptionV3ALNClassifier(
@@ -223,7 +215,7 @@ def main():
         # Treinamento rápido
         classifier, history, results = run_inception_v3_training(
             max_patches_per_patient=5,
-            epochs=10,
+            epochs=30,
             batch_size=8
         )
         
