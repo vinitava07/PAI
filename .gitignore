@@ -4,6 +4,7 @@ patient-clinical-data.xlsx
 paper_patches
 patches/
 segmentation_tests/
+*.h5
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
