@@ -474,41 +474,42 @@ def process_batch_images(dir_path, output_dir=None):
     """
     segmenter = HENucleusSegmentation()
     all_results = []
-
+    contador = 0
     selected_patch_from_patient = {}
     for arquivo in dir_path.rglob('*'):
         # Verifica se o arquivo tem uma das extensões desejadas (ignorando maiúsculas/minúsculas)
-        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg':
+        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg' and contador < 100:
             try:
                 # Processa imagem
                 features, stats, labeled = segmenter.process_image(
                     arquivo,
                     visualize=False,  # Não visualiza em batch
                 )
-
                 result = {
                     'image_path': arquivo,
                     'features': features,
                     'statistics': stats,
                     'labeled_image': labeled
                 }
-
                 all_results.append(result)
-
                 if arquivo.parent.name in selected_patch_from_patient:
                     if stats['num_nuclei'] > selected_patch_from_patient.get(arquivo.parent.name, {}).get('statistics', {}).get('num_nuclei', 0):
                         selected_patch_from_patient[arquivo.parent.name] = result
                 else:
                     selected_patch_from_patient[arquivo.parent.name] = result
-
             except Exception as e:
                 print(f"Erro ao processar {arquivo}: {str(e)}")
                 all_results.append({
                     'image_path': arquivo,
                     'error': str(e)
                 })
+            contador = contador + 1
 
-    print(selected_patch_from_patient)
+    with open("patches_certos.txt", "w", encoding="utf-8") as f:
+        for paciente in selected_patch_from_patient.values():
+            f.write(f"{paciente['image_path']}\n")
+
+    print([f"paciente: {x['image_path']} {x['statistics']['num_nuclei']}" for x in selected_patch_from_patient.values()])
 
     return all_results
 
@@ -530,7 +531,8 @@ if __name__ == "__main__":
     # )
 
     all_results = process_batch_images(patches_dir)
-    print(all_results)
+    # print(all_results)
+    print("cabo")
 
     # Exibe resumo
     # if stats:
