@@ -12,13 +12,13 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 import tensorflow as tf
-from tensorflow.keras.applications import InceptionV3
-from tensorflow.keras.applications.inception_v3 import preprocess_input
-from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, Input
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import (
+from tensorflow.keras.applications import InceptionV3 # type: ignore
+from tensorflow.keras.applications.inception_v3 import preprocess_input # type: ignore
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array # type: ignore
+from tensorflow.keras.models import Model # type: ignore
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D, Input # type: ignore
+from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras.callbacks import ( # type: ignore
     EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, 
     TensorBoard, CSVLogger, LearningRateScheduler
 )

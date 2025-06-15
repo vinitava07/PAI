@@ -1,12 +1,12 @@
 import pandas as pd
 import numpy as np
-from tensorflow.keras.applications import InceptionV3
-from tensorflow.keras.applications.inception_v3 import preprocess_input
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
+from tensorflow.keras.applications import InceptionV3 # type: ignore
+from tensorflow.keras.applications.inception_v3 import preprocess_input # type: ignore
+from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint # type: ignore
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array # type: ignore
+from tensorflow.keras.models import Model # type: ignore
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D # type: ignore
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import classification_report, confusion_matrix
@@ -565,7 +565,7 @@ class InceptionV3ALNClassifier:
         
     def load_model(self, filepath):
         """Carrega modelo salvo"""
-        from tensorflow.keras.models import load_model
+        from tensorflow.keras.models import load_model # type: ignore
         self.model = load_model(filepath)
         print(f"Modelo carregado de: {filepath}")
         
