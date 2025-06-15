@@ -28,7 +28,7 @@ from typing import Dict, Tuple, List, Optional
 physical_devices = tf.config.list_physical_devices('GPU')
 if physical_devices:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
-    tf.config.experimental.set_memory_limit(physical_devices[0], 5500)
+    # tf.config.experimental.set_memory_limit(physical_devices[0], 5500)
     print(f"GPU disponível: {physical_devices[0]}")
 else:
     print("Executando em CPU")

@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from inception_pipeline import InceptionALNClassifier
+from inception.inception_pipeline import InceptionALNClassifier
 from xgboost.xgboost_training import XGBoostBreastCancerClassifier
 
 class ALNMethodComparison:

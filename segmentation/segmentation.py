@@ -580,18 +580,64 @@ if __name__ == "__main__":
     base_dir = Path(__file__).parent.parent
     patches_dir = base_dir / "patches"
     clinical_data_path = base_dir / "patient-clinical-data.csv"
+    patches_certos = base_dir / "patches_certos.txt"
+
+    image_paths = []
+    try:
+        with open(patches_certos, 'r') as f:
+            for line in f:
+                # Divide a linha no ' - ' e pega a primeira parte (o caminho da imagem)
+                image_path = line.split(' - ')[0].strip()
+                image_paths.append(image_path)
+    except FileNotFoundError:
+        print(f"Erro: O arquivo '{patches_certos}' não foi encontrado.")
+    except Exception as e:
+        print(f"Ocorreu um erro ao ler o arquivo: {e}")
+    # print(image_paths)
+
+    df = pd.read_csv(clinical_data_path)
+    status_aln = df['ALN status']
+    print(status_aln)
 
     # Processa a imagem
     # features, stats, labeled = segmenter.process_image(
-    #     image_path,
+    #     image_paths[104],
     #     visualize=True,
     # )
+    # print(labeled)
+    type_color = {
+        'N0': 'P',
+        'N+(1-2)': 'V',
+        'N+(>2)': 'A'
+    }
 
-    all_results = process_batch_images(
-        patches_dir,
-        max_workers=None  # ou especifique um número como 4, 8, etc.
-    )    # print(all_results)
-    print("cabo")
+    general_stats = []
+    lista = [0] * 1058
+    count = 0
+    #Processa todas as imagens e cria um csv com os atributos dela
+    for image in image_paths:
+        image_path = Path(image).parent.name
+        df[image_path]
+        if count < 10:
+            features, stats, labeled = segmenter.process_image(
+            image,
+            visualize=False
+            )
+            general_stats.append(stats)
+            print(labeled)
+        count+=1
+    # print(general_stats)
+
+
+
+
+    # all_results = process_batch_images(
+    #     patches_dir,
+    #     max_workers=None  # ou especifique um número como 4, 8, etc.
+    # )    # print(all_results)
+    # print("cabo")
+
+
 
     # Exibe resumo
     # if stats:
