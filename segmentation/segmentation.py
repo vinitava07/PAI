@@ -514,7 +514,7 @@ def process_batch_images(dir_path, output_dir=None, max_workers=None, max_images
     contador = 0
 
     for arquivo in dir_path.rglob('*'):
-        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg' and contador < max_images:
+        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg':
             image_files.append(arquivo)
             contador += 1
 
@@ -550,7 +550,7 @@ def process_batch_images(dir_path, output_dir=None, max_workers=None, max_images
                     else:
                         selected_patch_from_patient[patient_name] = result
 
-                print(f"Processado: {arquivo.name} - Status: {'Sucesso' if result['success'] else 'Erro'}")
+                # print(f"Processado: {arquivo.name} - Status: {'Sucesso' if result['success'] else 'Erro'}")
 
             except Exception as exc:
                 print(f"Erro inesperado ao processar {arquivo}: {exc}")
@@ -561,12 +561,12 @@ def process_batch_images(dir_path, output_dir=None, max_workers=None, max_images
                 })
 
     # Salva os melhores patches por paciente
-    with open("patches_certos.txt", "w", encoding="utf-8") as f:
+    with open("patches_certos_claude.txt", "w", encoding="utf-8") as f:
         for paciente in selected_patch_from_patient.values():
-            f.write(f"{paciente['image_path']}\n")
+            f.write(f"{paciente['image_path']} - {paciente['statistics']['num_nuclei']}\n")
 
-    print([f"paciente: {x['image_path']} {x['statistics']['num_nuclei']}"
-           for x in selected_patch_from_patient.values()])
+    # print([f"paciente: {x['image_path']} {x['statistics']['num_nuclei']}"
+    #        for x in selected_patch_from_patient.values()])
 
     return all_results
 
@@ -589,8 +589,7 @@ if __name__ == "__main__":
 
     all_results = process_batch_images(
         patches_dir,
-        max_workers=None,  # ou especifique um número como 4, 8, etc.
-        max_images=100
+        max_workers=None  # ou especifique um número como 4, 8, etc.
     )    # print(all_results)
     print("cabo")
 
