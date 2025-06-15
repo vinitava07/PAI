@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import numpy as np
 from tensorflow.keras.applications import InceptionV3
@@ -411,7 +410,7 @@ class InceptionV3ALNClassifier:
             
             # Recompila com learning rate menor
             self.model.compile(
-                optimizer=Adam(learning_rate=0.00001),  # LR muito baixo
+                optimizer=Adam(learning_rate=0.0001),  # LR muito baixo
                 loss='categorical_crossentropy',
                 metrics=['accuracy']
             )

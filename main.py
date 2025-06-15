@@ -2,7 +2,7 @@ import os
 from tkinter import ttk, filedialog, messagebox
 import pandas as pd
 
-from interface import ImageViewer
+from interface.interface import ImageViewer
 
 
 filepath = 'patient-clinical-data.xlsx'

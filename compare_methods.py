@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from inception_pipeline import InceptionALNClassifier
-from xgboost_training import XGBoostBreastCancerClassifier
+from xgboost.xgboost_training import XGBoostBreastCancerClassifier
 
 class ALNMethodComparison:
     """
@@ -143,7 +143,7 @@ class ALNMethodComparison:
         # 2. Avalia XGBoost
         print("\n🌳 Avaliando XGBoost...")
         try:
-            from xgboost_integration import BreastCancerDataIntegration
+            from xgboost.xgboost_integration import BreastCancerDataIntegration
             
             # Prepara dados para XGBoost
             integrator = BreastCancerDataIntegration(

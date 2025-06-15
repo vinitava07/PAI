@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import glob
-from segmentation import HENucleusSegmentation
+from segmentation.segmentation import HENucleusSegmentation
 import warnings
 warnings.filterwarnings('ignore')
 

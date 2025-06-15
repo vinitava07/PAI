@@ -10,7 +10,7 @@ from sklearn.utils.class_weight import compute_class_weight
 import xgboost as xgb
 import matplotlib.pyplot as plt
 import seaborn as sns
-from xgboost_integration import BreastCancerDataIntegration
+from xgboost.xgboost_integration import BreastCancerDataIntegration
 import warnings
 warnings.filterwarnings('ignore')
 
