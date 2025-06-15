@@ -6,8 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="36db1c9d-1e9d-41f6-ada0-68b0d9dc2d80" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/patches_certos.txt" beforeDir="false" afterPath="$PROJECT_DIR$/patches_certos.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/segmentation/segmentation.py" beforeDir="false" afterPath="$PROJECT_DIR$/segmentation/segmentation.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -44,6 +42,11 @@
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+    </key>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
@@ -62,7 +65,7 @@
       <workItem from="1749135552560" duration="2603000" />
       <workItem from="1749220476325" duration="3824000" />
       <workItem from="1749782026399" duration="130000" />
-      <workItem from="1750006859576" duration="17915000" />
+      <workItem from="1750006859576" duration="21428000" />
     </task>
     <servers />
   </component>
