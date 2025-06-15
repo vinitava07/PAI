@@ -611,25 +611,95 @@ if __name__ == "__main__":
         'N+(>2)': 'A'
     }
 
-    general_stats = []
+    general_stats = {"area": [[], [], []], "circularity": [[], [], []], "eccentricity": [[],[], []], "normalized_nn_distance": [[], [], []]}
     lista = [0] * 1058
     count = 0
+
     #Processa todas as imagens e cria um csv com os atributos dela
     for image in image_paths:
-        image_path = Path(image).parent.name
-        df[image_path]
+        patient_id = Path(image).parent.name
+        patient_class = df.loc[df['Patient ID'] == int(patient_id), 'ALN status'].values[0]
         if count < 10:
             features, stats, labeled = segmenter.process_image(
             image,
             visualize=False
             )
-            general_stats.append(stats)
-            print(labeled)
+            if patient_class == "N0":
+                general_stats["area"][0].append(stats["area"]['mean'])
+                general_stats["circularity"][0].append(stats["circularity"]['mean'])
+                general_stats["normalized_nn_distance"][0].append(stats["normalized_nn_distance"]['mean'])
+                general_stats["eccentricity"][0].append(stats["eccentricity"]['mean'])
+            elif patient_class == "N+(>2)":
+                general_stats["area"][2].append(stats["area"]['mean'])
+                general_stats["circularity"][2].append(stats["circularity"]['mean'])
+                general_stats["normalized_nn_distance"][2].append(stats["normalized_nn_distance"]['mean'])
+                general_stats["eccentricity"][2].append(stats["eccentricity"]['mean'])
+            else:
+                general_stats["area"][1].append(stats["area"]['mean'])
+                general_stats["circularity"][1].append(stats["circularity"]['mean'])
+                general_stats["normalized_nn_distance"][1].append(stats["normalized_nn_distance"]['mean'])
+                general_stats["eccentricity"][1].append(stats["eccentricity"]['mean'])
         count+=1
-    # print(general_stats)
+    print(general_stats)
 
+    colors = ['black', 'blue', 'red']
 
+    plt.subplot(2,3, 1)
+    for i in range(3):
+        x = general_stats['area'][i]
+        y = general_stats['circularity'][i]
+        plt.scatter(x, y, color=colors[i])
 
+    plt.xlabel("Área Média")
+    plt.ylabel("Circularidade Média")
+
+    plt.subplot(2,3, 2)
+    for i in range(3):
+        x = general_stats['area'][i]
+        y = general_stats['eccentricity'][i]
+        plt.scatter(x, y, color=colors[i])
+
+    plt.xlabel("Área Média")
+    plt.ylabel("Excentricidade Média")
+
+    plt.subplot(2,3, 3)
+    for i in range(3):
+        x = general_stats['circularity'][i]
+        y = general_stats['eccentricity'][i]
+        plt.scatter(x, y, color=colors[i])
+
+    plt.xlabel("Circularidade Média")
+    plt.ylabel("Excentricidade Média")
+
+    plt.subplot(2,3, 4)
+    for i in range(3):
+        x = general_stats['circularity'][i]
+        y = general_stats['normalized_nn_distance'][i]
+        plt.scatter(x, y, color=colors[i])
+
+    plt.xlabel("Circularidade Média")
+    plt.ylabel("Distância Normalizada")
+
+    plt.subplot(2,3, 5)
+    for i in range(3):
+        x = general_stats['eccentricity'][i]
+        y = general_stats['normalized_nn_distance'][i]
+        plt.scatter(x, y, color=colors[i])
+
+    plt.xlabel("Excentricidade Média")
+    plt.ylabel("Distância Normalizada")
+
+    plt.subplot(2,3, 6)
+    for i in range(3):
+        x = general_stats['area'][i]
+        y = general_stats['normalized_nn_distance'][i]
+        plt.scatter(x, y, color=colors[i])
+
+    plt.xlabel("Área Média")
+    plt.ylabel("Distância Normalizada")
+
+    plt.tight_layout()
+    plt.show()
 
     # all_results = process_batch_images(
     #     patches_dir,
