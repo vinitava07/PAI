@@ -118,7 +118,7 @@ class InceptionV3ALNClassifier:
     
     def prepare_dataset(self, max_patches_per_patient: Optional[int] = None, 
                        test_size: float = 0.2, 
-                       val_size: float = 0.1) -> Dict[str, pd.DataFrame]:
+                       val_size: float = 0.25) -> Dict[str, pd.DataFrame]:
         """
         Prepara dataset com divisão correta por paciente
         
@@ -207,17 +207,17 @@ class InceptionV3ALNClassifier:
             random_state=42,
             stratify=patient_classes
         )
-        
+
         # Segunda divisão: separa validação do treino
-        val_split = val_size / (1 - test_size)  # Ajusta proporção
         patients_train, patients_val, y_train, y_val = train_test_split(
             patients_train_val,
             y_train_val,
-            test_size=val_split,
-            random_state=42,
+            train_size=0.75,
+            test_size=0.25,
+            random_state=43,
             stratify=y_train_val
         )
-        
+
         # Cria DataFrames finais
         train_patches = df_patches[df_patches['patient_id'].isin(patients_train)]
         val_patches = df_patches[df_patches['patient_id'].isin(patients_val)]
@@ -1066,7 +1066,7 @@ def main():
     print("="*80)
     
     # Configurações
-    base_dir = Path(__file__).parent
+    base_dir = Path(__file__).parent.parent
     patches_dir = base_dir / "patches"
     clinical_data_path = base_dir / "patient-clinical-data.csv"
     

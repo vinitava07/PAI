@@ -7,6 +7,8 @@ from skimage.segmentation import watershed
 import matplotlib.pyplot as plt
 from skimage.color import rgb2hed
 import pandas as pd
+from pathlib import Path
+import os
 
 class HENucleusSegmentation:
     """
@@ -41,7 +43,7 @@ class HENucleusSegmentation:
         Returns:
             hematoxylin_channel: Canal de hematoxilina isolado
         """
-        print("Carregando e pré-processando imagem H&E...")
+        # print("Carregando e pré-processando imagem H&E...")
 
         # Carrega a imagem
         self.original_image = cv2.imread(image_path)
@@ -97,7 +99,7 @@ class HENucleusSegmentation:
             labeled_nuclei: Núcleos rotulados
             binary_mask: Máscara binária dos núcleos
         """
-        print("Segmentando núcleos...")
+        # print("Segmentando núcleos...")
 
         # 1. Suavização para reduzir ruído
         smoothed = cv2.medianBlur(hematoxylin_channel, 3)
@@ -176,7 +178,7 @@ class HENucleusSegmentation:
         binary_mask = (labeled_nuclei > 0).astype(np.uint8) * 255
 
         num_nuclei = len(np.unique(labeled_nuclei)) - 1  # -1 para excluir fundo
-        print(f"Núcleos detectados: {num_nuclei}")
+        # print(f"Núcleos detectados: {num_nuclei}")
 
         return labeled_nuclei, binary_mask
 
@@ -223,7 +225,7 @@ class HENucleusSegmentation:
         Returns:
             features_df: DataFrame com características de cada núcleo
         """
-        print("Extraindo características dos núcleos...")
+        # print("Extraindo características dos núcleos...")
 
         # Usa o canal de hematoxilina como imagem de intensidade
         regions = measure.regionprops(labeled_image, intensity_image=self.hematoxylin_channel)
@@ -459,7 +461,7 @@ class HENucleusSegmentation:
 
 
 # Função auxiliar para processar múltiplas imagens
-def process_batch_images(image_paths, output_dir=None):
+def process_batch_images(dir_path, output_dir=None):
     """
     Processa múltiplas imagens H&E
 
@@ -473,30 +475,40 @@ def process_batch_images(image_paths, output_dir=None):
     segmenter = HENucleusSegmentation()
     all_results = []
 
-    for i, image_path in enumerate(image_paths):
-        print(f"\nProcessando imagem {i+1}/{len(image_paths)}: {image_path}")
+    selected_patch_from_patient = {}
+    for arquivo in dir_path.rglob('*'):
+        # Verifica se o arquivo tem uma das extensões desejadas (ignorando maiúsculas/minúsculas)
+        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg':
+            try:
+                # Processa imagem
+                features, stats, labeled = segmenter.process_image(
+                    arquivo,
+                    visualize=False,  # Não visualiza em batch
+                )
 
-        try:
+                result = {
+                    'image_path': arquivo,
+                    'features': features,
+                    'statistics': stats,
+                    'labeled_image': labeled
+                }
 
-            # Processa imagem
-            features, stats, labeled = segmenter.process_image(
-                image_path,
-                visualize=False,  # Não visualiza em batch
-            )
+                all_results.append(result)
 
-            all_results.append({
-                'image_path': image_path,
-                'features': features,
-                'statistics': stats,
-                'labeled_image': labeled
-            })
+                if arquivo.parent.name in selected_patch_from_patient:
+                    if stats['num_nuclei'] > selected_patch_from_patient.get(arquivo.parent.name, {}).get('statistics', {}).get('num_nuclei', 0):
+                        selected_patch_from_patient[arquivo.parent.name] = result
+                else:
+                    selected_patch_from_patient[arquivo.parent.name] = result
 
-        except Exception as e:
-            print(f"Erro ao processar {image_path}: {str(e)}")
-            all_results.append({
-                'image_path': image_path,
-                'error': str(e)
-            })
+            except Exception as e:
+                print(f"Erro ao processar {arquivo}: {str(e)}")
+                all_results.append({
+                    'image_path': arquivo,
+                    'error': str(e)
+                })
+
+    print(selected_patch_from_patient)
 
     return all_results
 
@@ -507,21 +519,26 @@ if __name__ == "__main__":
     segmenter = HENucleusSegmentation()
 
     # Substitua pelo caminho da sua imagem
-    image_path = "/Users/leonardo/Documents/PUC/6. Semestre VI/Processamento e Análise de Imagens/TP/PAI/patches/1/1_0_0_0.jpg"
+    base_dir = Path(__file__).parent.parent
+    patches_dir = base_dir / "patches"
+    clinical_data_path = base_dir / "patient-clinical-data.csv"
 
     # Processa a imagem
-    features, stats, labeled = segmenter.process_image(
-        image_path,
-        visualize=True,
-    )
+    # features, stats, labeled = segmenter.process_image(
+    #     image_path,
+    #     visualize=True,
+    # )
+
+    all_results = process_batch_images(patches_dir)
+    print(all_results)
 
     # Exibe resumo
-    if stats:
-        print("\n" + "="*50)
-        print("RESUMO DA ANÁLISE")
-        print("="*50)
-        print(f"Total de núcleos detectados: {stats['num_nuclei']}")
-        print(f"Área média: {stats['area']['mean']:.2f} ± {stats['area']['std']:.2f} pixels")
-        print(f"Circularidade média: {stats['circularity']['mean']:.3f} ± {stats['circularity']['std']:.3f}")
-        print(f"Excentricidade média: {stats['eccentricity']['mean']:.3f} ± {stats['eccentricity']['std']:.3f}")
-        print(f"Distância NN normalizada: {stats['normalized_nn_distance']['mean']:.3f} ± {stats['normalized_nn_distance']['std']:.3f}")
+    # if stats:
+    #     print("\n" + "="*50)
+    #     print("RESUMO DA ANÁLISE")
+    #     print("="*50)
+    #     print(f"Total de núcleos detectados: {stats['num_nuclei']}")
+    #     print(f"Área média: {stats['area']['mean']:.2f} ± {stats['area']['std']:.2f} pixels")
+    #     print(f"Circularidade média: {stats['circularity']['mean']:.3f} ± {stats['circularity']['std']:.3f}")
+    #     print(f"Excentricidade média: {stats['eccentricity']['mean']:.3f} ± {stats['eccentricity']['std']:.3f}")
+    #     print(f"Distância NN normalizada: {stats['normalized_nn_distance']['mean']:.3f} ± {stats['normalized_nn_distance']['std']:.3f}")

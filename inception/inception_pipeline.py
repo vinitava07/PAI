@@ -13,7 +13,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-import cv2
+from typing import Dict, Tuple, List, Optional
 
 class InceptionV3ALNClassifier:
     """
@@ -55,103 +55,167 @@ class InceptionV3ALNClassifier:
         
         print(f"Dados carregados: {len(self.clinical_data)} pacientes")
         print(f"Distribuição das classes: {self.clinical_data['ALN status'].value_counts().to_dict()}")
-        
-    def prepare_dataset(self, max_patches_per_patient=None, test_size=0.2, val_size=0.1):
+
+    def prepare_dataset(self, max_patches_per_patient: Optional[int] = None,
+                        test_size: float = 0.2,
+                        val_size: float = 0.25) -> Dict[str, pd.DataFrame]:
         """
-        Prepara dataset de patches com suas respectivas labels
-        
+        Prepara dataset com divisão correta por paciente
+
         Args:
-            max_patches_per_patient: Máximo de patches por paciente (None = todos)
-            test_size: Proporção do conjunto de teste
-            val_size: Proporção do conjunto de validação
-            
+            max_patches_per_patient: Limite de patches por paciente (None = todos)
+            test_size: Proporção para teste (padrão 20%)
+            val_size: Proporção para validação do treino
+
         Returns:
-            Dicionário com datasets preparados
+            Dicionário com DataFrames para treino, validação e teste
         """
-        print("Preparando dataset de patches...")
-        
-        # Lista para armazenar dados dos patches
+        print(f"\n📁 Preparando dataset de patches...")
+        print(f"  Max patches/paciente: {max_patches_per_patient or 'Todos'}")
+
+        # Coleta informações dos patches
         patch_data = []
-        
-        # Itera sobre pacientes
+        patient_patch_counts = {}
+
         for _, patient_row in self.clinical_data.iterrows():
             patient_id = str(patient_row['Patient ID'])
-            aln_class = patient_row['ALN_encoded']
-            
-            if pd.isna(aln_class):
-                continue
-                
+            aln_class = int(patient_row['ALN_encoded'])
             patient_dir = self.patches_dir / patient_id
-            
+
             if not patient_dir.exists():
+                print(f"⚠️ Diretório não encontrado: {patient_dir}")
                 continue
-                
+
             # Lista patches do paciente
-            patch_files = list(patient_dir.glob("*.jpg"))
-            
+            patch_files = sorted(list(patient_dir.glob("*.jpg")))
+
+            if not patch_files:
+                print(f"⚠️ Nenhum patch encontrado para paciente {patient_id}")
+                continue
+
             # Limita número de patches se especificado
             if max_patches_per_patient and len(patch_files) > max_patches_per_patient:
-                patch_files = patch_files[:max_patches_per_patient]
-                
-            # Adiciona cada patch à lista
+                # Seleciona aleatoriamente para evitar viés
+                np.random.seed(42)  # Reprodutibilidade
+                indices = np.random.choice(len(patch_files), max_patches_per_patient, replace=False)
+                patch_files = [patch_files[i] for i in sorted(indices)]
+
+            patient_patch_counts[patient_id] = len(patch_files)
+
+            # Adiciona patches ao dataset
             for patch_file in patch_files:
                 patch_data.append({
                     'patch_path': str(patch_file),
                     'patient_id': patient_id,
-                    'class': int(aln_class),
-                    'class_name': self.class_names[int(aln_class)]
+                    'class': aln_class,
+                    'class_name': self.class_names[aln_class]
                 })
-        
+
         if not patch_data:
-            raise ValueError("Nenhum patch encontrado!")
-            
+            raise ValueError("❌ Nenhum patch foi encontrado!")
+
         # Converte para DataFrame
         df_patches = pd.DataFrame(patch_data)
-        
-        print(f"Total de patches: {len(df_patches)}")
-        print(f"Distribuição por classe: {df_patches['class_name'].value_counts().to_dict()}")
-        
-        # Divide por paciente (não por patch) para evitar data leakage
+
+        print(f"\n📊 Estatísticas dos patches:")
+        print(f"  Total de patches: {len(df_patches)}")
+        print(f"  Pacientes com patches: {len(patient_patch_counts)}")
+        print(f"  Média patches/paciente: {np.mean(list(patient_patch_counts.values())):.1f}")
+
+        # Distribuição por classe
+        print("\n📊 Distribuição de patches por classe:")
+        for class_name, count in df_patches['class_name'].value_counts().items():
+            percentage = (count / len(df_patches)) * 100
+            print(f"  {class_name}: {count} patches ({percentage:.1f}%)")
+
+        # DIVISÃO POR PACIENTE (não por patch!)
+        print(f"\n🔄 Dividindo dataset por paciente...")
+
+        # Lista única de pacientes e suas classes
         unique_patients = df_patches['patient_id'].unique()
-        
-        # Estratifica por distribuição de classes dos pacientes
         patient_classes = []
+
         for pid in unique_patients:
             patient_class = df_patches[df_patches['patient_id'] == pid]['class'].iloc[0]
             patient_classes.append(patient_class)
-            
-        # Split de pacientes
-        train_patients, temp_patients, _, temp_classes = train_test_split(
-            unique_patients, patient_classes, 
-            test_size=(test_size + val_size), 
-            random_state=42, 
+
+        # Primeira divisão: 80% treino+val, 20% teste
+        patients_train_val, patients_test, y_train_val, y_test = train_test_split(
+            unique_patients,
+            patient_classes,
+            test_size=test_size,
+            random_state=42,
             stratify=patient_classes
         )
-        
-        # Split validação e teste
-        val_patients, test_patients = train_test_split(
-            temp_patients, 
-            test_size=(test_size / (test_size + val_size)), 
-            random_state=42,
-            stratify=temp_classes
+
+        # Segunda divisão: separa validação do treino
+        patients_train, patients_val, y_train, y_val = train_test_split(
+            patients_train_val,
+            y_train_val,
+            train_size=0.75,
+            test_size=0.25,
+            random_state=43,
+            stratify=y_train_val
         )
-        
-        # Separa patches por conjunto
-        train_patches = df_patches[df_patches['patient_id'].isin(train_patients)]
-        val_patches = df_patches[df_patches['patient_id'].isin(val_patients)]
-        test_patches = df_patches[df_patches['patient_id'].isin(test_patients)]
-        
-        print(f"Patches treino: {len(train_patches)}")
-        print(f"Patches validação: {len(val_patches)}")
-        print(f"Patches teste: {len(test_patches)}")
-        
+
+        # Cria DataFrames finais
+        train_patches = df_patches[df_patches['patient_id'].isin(patients_train)]
+        val_patches = df_patches[df_patches['patient_id'].isin(patients_val)]
+        test_patches = df_patches[df_patches['patient_id'].isin(patients_test)]
+
+        # Embaralha patches dentro de cada conjunto
+        train_patches = train_patches.sample(frac=1, random_state=42).reset_index(drop=True)
+        val_patches = val_patches.sample(frac=1, random_state=42).reset_index(drop=True)
+        test_patches = test_patches.sample(frac=1, random_state=42).reset_index(drop=True)
+
+        # Estatísticas finais
+        print(f"\n✅ Divisão concluída:")
+        print(f"  Pacientes treino: {len(patients_train)} ({len(train_patches)} patches)")
+        print(f"  Pacientes validação: {len(patients_val)} ({len(val_patches)} patches)")
+        print(f"  Pacientes teste: {len(patients_test)} ({len(test_patches)} patches)")
+
+        # Verifica distribuição de classes
+        print("\n📊 Distribuição de classes por conjunto:")
+        for split_name, split_df in [('Treino', train_patches),
+                                     ('Validação', val_patches),
+                                     ('Teste', test_patches)]:
+            dist = split_df['class_name'].value_counts()
+            print(f"\n  {split_name}:")
+            for class_name in self.class_names:
+                count = dist.get(class_name, 0)
+                percentage = (count / len(split_df)) * 100 if len(split_df) > 0 else 0
+                print(f"    {class_name}: {count} ({percentage:.1f}%)")
+
+        # Salva informações da divisão
+        split_info = {
+            'total_patches': len(df_patches),
+            'total_patients': len(unique_patients),
+            'max_patches_per_patient': max_patches_per_patient,
+            'test_size': test_size,
+            'val_size': val_size,
+            'train_patients': len(patients_train),
+            'val_patients': len(patients_val),
+            'test_patients': len(patients_test),
+            'train_patches': len(train_patches),
+            'val_patches': len(val_patches),
+            'test_patches': len(test_patches),
+            'class_distribution': {
+                'train': train_patches['class_name'].value_counts().to_dict(),
+                'val': val_patches['class_name'].value_counts().to_dict(),
+                'test': test_patches['class_name'].value_counts().to_dict()
+            }
+        }
+
+        # with open(self.run_dir / 'dataset_split_info.json', 'w') as f:
+        #     json.dump(split_info, f, indent=2)
+
         return {
             'train': train_patches,
             'val': val_patches,
             'test': test_patches,
             'all': df_patches
         }
-        
+
     def preprocess_image(self, image_path):
         """
         Pré-processa uma imagem para o modelo Inception V3
