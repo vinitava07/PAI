@@ -1,0 +1,24 @@
+RESUMO DO DATASET INTEGRADO
+==================================================
+
+Total de pacientes: 1058
+Distribuição ALN status:
+ALN status
+N0         655
+N+(1-2)    210
+N+(>2)     193
+Name: count, dtype: int64
+
+Features morfológicos extraídos: 12
+  - area_mean
+  - area_std
+  - circularity_mean
+  - circularity_std
+  - eccentricity_mean
+  - eccentricity_std
+  - normalized_nn_distance_mean
+  - normalized_nn_distance_std
+  - area_p25
+  - area_p75
+  - circularity_p25
+  - circularity_p75

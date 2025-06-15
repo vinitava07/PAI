@@ -16,7 +16,7 @@ from inception_pipeline import InceptionV3ALNClassifier
 def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_epochs=10, batch_size=8):
     """
     Executa treinamento completo do Inception V3 pré-treinado
-    
+
     Args:
         max_patches_per_patient: Máximo de patches por paciente
         epochs: Número de épocas de feature extraction
@@ -27,7 +27,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
     print("="*80)
     print("🧠 TREINAMENTO INCEPTION V3 PRÉ-TREINADO - CLASSIFICAÇÃO ALN")
     print("="*80)
-    
+
     # Configuração de caminhos
     base_dir = Path(__file__).parent
     patches_dir = base_dir / "patches"
@@ -60,7 +60,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         print("\n" + "="*60)
         print("📊 PREPARAÇÃO DOS DADOS")
         print("="*60)
-        
+
         datasets = classifier.prepare_dataset(
             max_patches_per_patient=max_patches_per_patient,
             test_size=0.2,
@@ -71,17 +71,17 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         print("\n" + "="*60)
         print("🏗️ CONSTRUÇÃO DO MODELO INCEPTION V3")
         print("="*60)
-        
+
         model = classifier.build_model(
             fine_tune=True,
             freeze_layers=150  # Congela primeiras 150 camadas
         )
-        
+
         # Treina modelo
         print("\n" + "="*60)
         print("🚀 TREINAMENTO (TWO-STAGE)")
         print("="*60)
-        
+
         history = classifier.train_model(
             datasets=datasets,
             epochs=epochs,
@@ -93,7 +93,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         print("\n" + "="*60)
         print("📈 AVALIAÇÃO NO CONJUNTO DE TESTE")
         print("="*60)
-        
+
         results = classifier.evaluate_model(
             test_df=datasets['test'],
             batch_size=batch_size
@@ -103,7 +103,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         print("\n" + "="*60)
         print("📊 VISUALIZAÇÕES")
         print("="*60)
-        
+
         classifier.plot_training_history(history)
         classifier.plot_confusion_matrix(results['confusion_matrix'])
         
@@ -115,7 +115,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         print("\n" + "="*60)
         print("📋 RELATÓRIO FINAL")
         print("="*60)
-        
+
         print(f"✅ Treinamento concluído com sucesso!")
         print(f"🎯 Acurácia final: {results['accuracy']:.4f}")
         print(f"💾 Modelo salvo em: {model_path}")
@@ -144,7 +144,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         print(f"  Total de parâmetros: {total_params:,}")
         print(f"  Modelo base: Inception V3 pré-treinado (ImageNet)")
         print(f"  Estratégia: Two-stage training (feature extraction + fine-tuning)")
-        
+
         return classifier, history, results
         
     except Exception as e:
@@ -165,7 +165,7 @@ def run_inception_v3_evaluation(model_path, max_patches_per_patient=None):
     print("="*80)
     print("🔍 AVALIAÇÃO INCEPTION V3 - MODELO PRÉ-TREINADO")
     print("="*80)
-    
+
     # Configuração de caminhos
     base_dir = Path(__file__).parent
     patches_dir = base_dir / "patches"
@@ -218,7 +218,7 @@ def main():
     print("4. Avaliar modelo existente")
     
     choice = "1"
-    
+
     if choice == "1":
         # Treinamento rápido
         classifier, history, results = run_inception_v3_training(
@@ -256,7 +256,7 @@ def main():
             return
             
         classifier, results = run_inception_v3_evaluation(model_path)
-        
+
     else:
         print("❌ Opção inválida")
         return
