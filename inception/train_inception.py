@@ -7,6 +7,7 @@ import tensorflow as tf
 physical_devices = tf.config.list_physical_devices('GPU')
 if physical_devices:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    tf.config.experimental.set_memory_limit(physical_devices[0], 5500)
     print(f"GPU disponível: {physical_devices[0]}")
 else:
     print("Executando em CPU")
@@ -15,7 +16,7 @@ from inception_pipeline import InceptionV3ALNClassifier
 base_dir = Path(__file__).parent.parent
 patches_dir = base_dir / "patches"
 clinical_data_path = base_dir / "patient-clinical-data.csv"
-def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_epochs=10, batch_size=8):
+def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_epochs=10, batch_size=16):
     """
     Executa treinamento completo do Inception V3 pré-treinado
     
@@ -60,8 +61,7 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         
         datasets = classifier.prepare_dataset(
             max_patches_per_patient=max_patches_per_patient,
-            test_size=0.2,
-            val_size=0.1
+            test_size=0.2
         )
         
         # Constrói modelo
@@ -69,9 +69,9 @@ def run_inception_v3_training(max_patches_per_patient=10, epochs=30, fine_tune_e
         print("🏗️ CONSTRUÇÃO DO MODELO INCEPTION V3")
         print("="*60)
         
-        model = classifier.build_model(
+        classifier.build_model(
             fine_tune=True,
-            freeze_layers=150  # Congela primeiras 150 camadas
+            freeze_layers=100  # Congela primeiras 150 camadas
         )
         
         # Treina modelo
@@ -176,8 +176,7 @@ def run_inception_v3_evaluation(model_path, max_patches_per_patient=None):
         # Prepara dataset
         datasets = classifier.prepare_dataset(
             max_patches_per_patient=max_patches_per_patient,
-            test_size=0.2,
-            val_size=0.1
+            test_size=0.2
         )
         
         # Avalia modelo
@@ -215,15 +214,15 @@ def main():
         # Treinamento rápido
         classifier, history, results = run_inception_v3_training(
             max_patches_per_patient=5,
-            epochs=30,
-            batch_size=8
+            epochs=20,
+            batch_size=12
         )
         
     elif choice == "2":
         # Treinamento médio
         classifier, history, results = run_inception_v3_training(
             max_patches_per_patient=10,
-            epochs=30,
+            epochs=25,
             batch_size=8
         )
         
@@ -233,8 +232,8 @@ def main():
         if confirm.lower() == 'y':
             classifier, history, results = run_inception_v3_training(
                 max_patches_per_patient=None,
-                epochs=50,
-                batch_size=4  # Batch menor para evitar problemas de memória
+                epochs=40,
+                batch_size=8  # Batch menor para evitar problemas de memória
             )
         else:
             print("❌ Treinamento cancelado")

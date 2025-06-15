@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 from skimage.color import rgb2hed
 import pandas as pd
 from pathlib import Path
-import os
+import concurrent.futures
+import multiprocessing
 
 class HENucleusSegmentation:
     """
@@ -460,56 +461,112 @@ class HENucleusSegmentation:
             raise
 
 
-# Função auxiliar para processar múltiplas imagens
-def process_batch_images(dir_path, output_dir=None):
+def process_single_image(arquivo):
     """
-    Processa múltiplas imagens H&E
+    Função auxiliar para processar uma única imagem
+    Usada para paralelização
 
     Args:
-        image_paths: Lista de caminhos das imagens
+        arquivo: Path object do arquivo de imagem
+
+    Returns:
+        dict: Resultado do processamento ou erro
+    """
+    segmenter = HENucleusSegmentation()
+    try:
+        # Processa imagem
+        features, stats, labeled = segmenter.process_image(
+            arquivo,
+            visualize=False,  # Não visualiza em batch
+        )
+        return {
+            'image_path': arquivo,
+            'features': features,
+            'statistics': stats,
+            'labeled_image': labeled,
+            'success': True
+        }
+    except Exception as e:
+        print(f"Erro ao processar {arquivo}: {str(e)}")
+        return {
+            'image_path': arquivo,
+            'error': str(e),
+            'success': False
+        }
+
+
+# Função auxiliar para processar múltiplas imagens
+def process_batch_images(dir_path, output_dir=None, max_workers=None, max_images=100):
+    """
+    Processa múltiplas imagens H&E em paralelo
+
+    Args:
+        dir_path: Diretório com as imagens
         output_dir: Diretório para salvar resultados
+        max_workers: Número máximo de processos paralelos (None = auto)
+        max_images: Número máximo de imagens para processar
 
     Returns:
         all_results: Lista com resultados de cada imagem
     """
-    segmenter = HENucleusSegmentation()
-    all_results = []
+    # Coleta todos os arquivos de imagem primeiro
+    image_files = []
     contador = 0
-    selected_patch_from_patient = {}
+
     for arquivo in dir_path.rglob('*'):
-        # Verifica se o arquivo tem uma das extensões desejadas (ignorando maiúsculas/minúsculas)
-        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg' and contador < 100:
+        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg' and contador < max_images:
+            image_files.append(arquivo)
+            contador += 1
+
+    print(f"Processando {len(image_files)} imagens em paralelo...")
+
+    # Define número de workers se não especificado
+    if max_workers is None:
+        max_workers = min(multiprocessing.cpu_count(), len(image_files))
+
+    all_results = []
+    selected_patch_from_patient = {}
+
+    # Processa imagens em paralelo
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submete todas as tarefas
+        future_to_file = {executor.submit(process_single_image, arquivo): arquivo
+                          for arquivo in image_files}
+
+        # Coleta resultados conforme vão sendo completados
+        for future in concurrent.futures.as_completed(future_to_file):
+            arquivo = future_to_file[future]
             try:
-                # Processa imagem
-                features, stats, labeled = segmenter.process_image(
-                    arquivo,
-                    visualize=False,  # Não visualiza em batch
-                )
-                result = {
-                    'image_path': arquivo,
-                    'features': features,
-                    'statistics': stats,
-                    'labeled_image': labeled
-                }
+                result = future.result()
                 all_results.append(result)
-                if arquivo.parent.name in selected_patch_from_patient:
-                    if stats['num_nuclei'] > selected_patch_from_patient.get(arquivo.parent.name, {}).get('statistics', {}).get('num_nuclei', 0):
-                        selected_patch_from_patient[arquivo.parent.name] = result
-                else:
-                    selected_patch_from_patient[arquivo.parent.name] = result
-            except Exception as e:
-                print(f"Erro ao processar {arquivo}: {str(e)}")
+
+                # Se processou com sucesso, verifica se é o melhor patch do paciente
+                if result['success']:
+                    patient_name = arquivo.parent.name
+                    if patient_name in selected_patch_from_patient:
+                        current_best = selected_patch_from_patient[patient_name]
+                        if result['statistics']['num_nuclei'] > current_best['statistics']['num_nuclei']:
+                            selected_patch_from_patient[patient_name] = result
+                    else:
+                        selected_patch_from_patient[patient_name] = result
+
+                print(f"Processado: {arquivo.name} - Status: {'Sucesso' if result['success'] else 'Erro'}")
+
+            except Exception as exc:
+                print(f"Erro inesperado ao processar {arquivo}: {exc}")
                 all_results.append({
                     'image_path': arquivo,
-                    'error': str(e)
+                    'error': str(exc),
+                    'success': False
                 })
-            contador = contador + 1
 
+    # Salva os melhores patches por paciente
     with open("patches_certos.txt", "w", encoding="utf-8") as f:
         for paciente in selected_patch_from_patient.values():
             f.write(f"{paciente['image_path']}\n")
 
-    print([f"paciente: {x['image_path']} {x['statistics']['num_nuclei']}" for x in selected_patch_from_patient.values()])
+    print([f"paciente: {x['image_path']} {x['statistics']['num_nuclei']}"
+           for x in selected_patch_from_patient.values()])
 
     return all_results
 
@@ -530,8 +587,11 @@ if __name__ == "__main__":
     #     visualize=True,
     # )
 
-    all_results = process_batch_images(patches_dir)
-    # print(all_results)
+    all_results = process_batch_images(
+        patches_dir,
+        max_workers=None,  # ou especifique um número como 4, 8, etc.
+        max_images=100
+    )    # print(all_results)
     print("cabo")
 
     # Exibe resumo

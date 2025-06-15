@@ -6,8 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="36db1c9d-1e9d-41f6-ada0-68b0d9dc2d80" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inception/inception_pipeline.py" beforeDir="false" afterPath="$PROJECT_DIR$/inception/inception_pipeline.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/inception/train_inception_v3_improved.py" beforeDir="false" afterPath="$PROJECT_DIR$/inception/train_inception_v3_improved.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/inception/train_inception.py" beforeDir="false" afterPath="$PROJECT_DIR$/inception/train_inception.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/segmentation/segmentation.py" beforeDir="false" afterPath="$PROJECT_DIR$/segmentation/segmentation.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -62,12 +61,23 @@
       <workItem from="1749135552560" duration="2603000" />
       <workItem from="1749220476325" duration="3824000" />
       <workItem from="1749782026399" duration="130000" />
-      <workItem from="1750006859576" duration="5770000" />
+      <workItem from="1750006859576" duration="8903000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/PAI$segmentation.coverage" NAME="segmentation Coverage Results" MODIFIED="1750009452250" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/segmentation" />
