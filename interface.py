@@ -871,59 +871,234 @@ class BreastCancerAnalysisGUI:
             )
         except Exception as e:
             messagebox.showerror("Erro", f"Erro na classificação:\n{str(e)}")
-            
+
     def show_statistics_screen(self):
         """
-        Exibe a tela de estatísticas da base de dados
+        Exibe a tela de estatísticas com plots dinâmicos baseados nos dados dos CSVs
         """
         self.clear_screen()
         self.current_screen = "statistics"
-        
+
         # Container principal
         main_frame = tk.Frame(self.root, bg='#f0f0f0')
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
+
         # Header
         header_frame = tk.Frame(main_frame, bg='#f0f0f0')
         header_frame.pack(fill=tk.X)
         self.create_back_button(header_frame)
-        
+
         # Título
         title_label = ttk.Label(main_frame,
-                               text="Estatísticas da Base de Dados",
-                               style='Title.TLabel')
+                                text="Estatísticas da Base de Dados",
+                                style='Title.TLabel')
         title_label.pack(pady=(30, 20))
-        
+
         try:
-            # Tenta carregar a imagem de estatísticas gerada pela segmentação
-            stats_image_path = Path(__file__).parent / "estatisticas.png"
-            
-            if stats_image_path.exists():
-                # Carrega e exibe a imagem
-                stats_image = Image.open(stats_image_path)
-                
-                # Redimensiona se necessário
-                max_width = 1000
-                max_height = 600
-                stats_image.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
-                
-                photo = ImageTk.PhotoImage(stats_image)
-                
-                # Label para exibir a imagem
-                img_label = tk.Label(main_frame, image=photo, bg='#f0f0f0')
-                img_label.image = photo  # Mantém referência
-                img_label.pack(pady=20)
-                
-            else:
-                # Se não houver imagem, gera estatísticas básicas
-                self.generate_basic_statistics(main_frame)
-                
+            # Gera estatísticas dinâmicas
+            self.generate_dynamic_statistics(main_frame)
+
         except Exception as e:
             error_label = ttk.Label(main_frame,
-                                  text=f"Erro ao carregar estatísticas:\n{str(e)}",
-                                  font=('Arial', 12))
+                                    text=f"Erro ao carregar estatísticas:\n{str(e)}",
+                                    font=('Arial', 12))
             error_label.pack(pady=50)
-            
+
+    def generate_dynamic_statistics(self, parent):
+        """
+        Gera e exibe estatísticas dinâmicas baseadas nos CSVs
+        """
+        try:
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            import matplotlib.pyplot as plt
+
+            # Carrega os dados
+            stats_path = Path(__file__).parent / "stats_imagens_certo.csv"
+            clinical_path = Path(__file__).parent / "patient-clinical-data.csv"
+
+            if not stats_path.exists():
+                raise FileNotFoundError(f"Arquivo não encontrado: {stats_path}")
+            if not clinical_path.exists():
+                raise FileNotFoundError(f"Arquivo não encontrado: {clinical_path}")
+
+            # Lê os dados
+            stats_df = pd.read_csv(stats_path)
+            clinical_df = pd.read_csv(clinical_path)
+
+            # Faz a junção dos dados baseada no patient_id
+            merged_df = stats_df.merge(
+                clinical_df[['Patient ID', 'ALN status']],
+                left_on='patient_id',
+                right_on='Patient ID',
+                how='left'
+            )
+
+            # Organiza os dados por classe ALN (como no segmentation.py)
+            general_stats = {
+                "area": [[], [], []],
+                "circularity": [[], [], []],
+                "eccentricity": [[], [], []],
+                "normalized_nn_distance": [[], [], []]
+            }
+
+            # Mapeia as classes para índices: N0=0, N+(1-2)=1, N+(>2)=2
+            class_mapping = {"N0": 0, "N+(1-2)": 1, "N+(>2)": 2}
+
+            for _, row in merged_df.iterrows():
+                aln_status = row['ALN status']
+                if aln_status in class_mapping:
+                    idx = class_mapping[aln_status]
+                    general_stats["area"][idx].append(row['area_mean'])
+                    general_stats["circularity"][idx].append(row['circularity_mean'])
+                    general_stats["eccentricity"][idx].append(row['eccentricity_mean'])
+                    general_stats["normalized_nn_distance"][idx].append(row['normalized_nn_distance_mean'])
+
+            # Frame para a visualização
+            stats_frame = tk.Frame(parent, bg='white', relief=tk.RAISED, bd=2)
+            stats_frame.pack(padx=20, pady=20, fill=tk.BOTH, expand=True)
+
+            # Cria a figura matplotlib (mesmos parâmetros do segmentation.py)
+            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+            fig.suptitle('Análise Estatística da Base de Dados - Características dos Núcleos', fontsize=16)
+
+            # Cores e labels (mesmos do segmentation.py)
+            colors = ['black', 'blue', 'red']
+            labels = ['N0', 'N+(1-2)', 'N+(>2)']
+
+            # Plot 1: Área vs Circularidade
+            for i in range(3):
+                if general_stats['area'][i] and general_stats['circularity'][i]:
+                    axes[0, 0].scatter(general_stats['area'][i],
+                                       general_stats['circularity'][i],
+                                       color=colors[i],
+                                       label=labels[i],
+                                       alpha=0.7)
+            axes[0, 0].set_xlabel("Área Média")
+            axes[0, 0].set_ylabel("Circularidade Média")
+            axes[0, 0].set_title("Área vs Circularidade")
+            axes[0, 0].legend()
+            axes[0, 0].grid(True, alpha=0.3)
+
+            # Plot 2: Área vs Excentricidade
+            for i in range(3):
+                if general_stats['area'][i] and general_stats['eccentricity'][i]:
+                    axes[0, 1].scatter(general_stats['area'][i],
+                                       general_stats['eccentricity'][i],
+                                       color=colors[i],
+                                       label=labels[i],
+                                       alpha=0.7)
+            axes[0, 1].set_xlabel("Área Média")
+            axes[0, 1].set_ylabel("Excentricidade Média")
+            axes[0, 1].set_title("Área vs Excentricidade")
+            axes[0, 1].legend()
+            axes[0, 1].grid(True, alpha=0.3)
+
+            # Plot 3: Circularidade vs Excentricidade
+            for i in range(3):
+                if general_stats['circularity'][i] and general_stats['eccentricity'][i]:
+                    axes[0, 2].scatter(general_stats['circularity'][i],
+                                       general_stats['eccentricity'][i],
+                                       color=colors[i],
+                                       label=labels[i],
+                                       alpha=0.7)
+            axes[0, 2].set_xlabel("Circularidade Média")
+            axes[0, 2].set_ylabel("Excentricidade Média")
+            axes[0, 2].set_title("Circularidade vs Excentricidade")
+            axes[0, 2].legend()
+            axes[0, 2].grid(True, alpha=0.3)
+
+            # Plot 4: Circularidade vs Distância Normalizada
+            for i in range(3):
+                if general_stats['circularity'][i] and general_stats['normalized_nn_distance'][i]:
+                    axes[1, 0].scatter(general_stats['circularity'][i],
+                                       general_stats['normalized_nn_distance'][i],
+                                       color=colors[i],
+                                       label=labels[i],
+                                       alpha=0.7)
+            axes[1, 0].set_xlabel("Circularidade Média")
+            axes[1, 0].set_ylabel("Distância Normalizada")
+            axes[1, 0].set_title("Circularidade vs Distância Normalizada")
+            axes[1, 0].legend()
+            axes[1, 0].grid(True, alpha=0.3)
+
+            # Plot 5: Excentricidade vs Distância Normalizada
+            for i in range(3):
+                if general_stats['eccentricity'][i] and general_stats['normalized_nn_distance'][i]:
+                    axes[1, 1].scatter(general_stats['eccentricity'][i],
+                                       general_stats['normalized_nn_distance'][i],
+                                       color=colors[i],
+                                       label=labels[i],
+                                       alpha=0.7)
+            axes[1, 1].set_xlabel("Excentricidade Média")
+            axes[1, 1].set_ylabel("Distância Normalizada")
+            axes[1, 1].set_title("Excentricidade vs Distância Normalizada")
+            axes[1, 1].legend()
+            axes[1, 1].grid(True, alpha=0.3)
+
+            # Plot 6: Área vs Distância Normalizada
+            for i in range(3):
+                if general_stats['area'][i] and general_stats['normalized_nn_distance'][i]:
+                    axes[1, 2].scatter(general_stats['area'][i],
+                                       general_stats['normalized_nn_distance'][i],
+                                       color=colors[i],
+                                       label=labels[i],
+                                       alpha=0.7)
+            axes[1, 2].set_xlabel("Área Média")
+            axes[1, 2].set_ylabel("Distância Normalizada")
+            axes[1, 2].set_title("Área vs Distância Normalizada")
+            axes[1, 2].legend()
+            axes[1, 2].grid(True, alpha=0.3)
+
+            plt.tight_layout()
+
+            # Integra matplotlib com tkinter
+            canvas = FigureCanvasTkAgg(fig, stats_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+            # Informações adicionais
+            info_frame = tk.Frame(parent, bg='#f0f0f0')
+            info_frame.pack(pady=10)
+
+            # Calcula estatísticas resumidas
+            total_patients = len(merged_df)
+            class_counts = merged_df['ALN status'].value_counts()
+
+            info_text = f"""
+            Total de pacientes analisados: {total_patients}
+
+            Distribuição por classe ALN:
+            • N0 (sem metástase): {class_counts.get('N0', 0)} pacientes
+            • N+(1-2) (1-2 linfonodos): {class_counts.get('N+(1-2)', 0)} pacientes  
+            • N+(>2) (>2 linfonodos): {class_counts.get('N+(>2)', 0)} pacientes
+
+            Características médias dos núcleos por classe:
+            """
+
+            # Adiciona médias por classe
+            for i, class_name in enumerate(['N0', 'N+(1-2)', 'N+(>2)']):
+                if general_stats['area'][i]:
+                    area_mean = np.mean(general_stats['area'][i])
+                    circ_mean = np.mean(general_stats['circularity'][i])
+                    ecc_mean = np.mean(general_stats['eccentricity'][i])
+                    nnd_mean = np.mean(general_stats['normalized_nn_distance'][i])
+
+                    info_text += f"""
+            {class_name}: Área={area_mean:.1f}, Circularidade={circ_mean:.3f}, 
+                     Excentricidade={ecc_mean:.3f}, Dist.Norm={nnd_mean:.2f}"""
+
+            info_label = ttk.Label(info_frame,
+                                   text=info_text,
+                                   font=('Arial', 10),
+                                   justify=tk.LEFT)
+            info_label.pack(pady=10)
+
+        except Exception as e:
+            error_label = ttk.Label(parent,
+                                    text=f"Erro ao gerar estatísticas:\n{str(e)}",
+                                    font=('Arial', 12))
+            error_label.pack(pady=50)
+
     def generate_basic_statistics(self, parent):
         """
         Gera e exibe estatísticas básicas da base de dados
