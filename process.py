@@ -1027,7 +1027,7 @@ class MobileNetV2Classifier(BaseALNClassifier):
     
     def __init__(self, patches_dir, clinical_data_path):
         super().__init__(patches_dir, clinical_data_path)
-        self.input_size = (224, 224)
+        self.input_size = (256, 256)
         self.model_name = "MobileNetV2"
         self.preprocess_input = preprocess_mobilenet
         
@@ -1039,7 +1039,7 @@ class MobileNetV2Classifier(BaseALNClassifier):
         base_model = MobileNetV2(
             weights='imagenet',
             include_top=False,
-            input_shape=(224, 224, 3),
+            input_shape=(256, 256, 3),
             alpha=1.0
         )
         
