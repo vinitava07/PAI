@@ -1,7 +1,3 @@
-"""
-Pipeline unificado para classificação de metástase ALN usando modelos profundos.
-Combina Inception V3 e MobileNet V2 com funções compartilhadas.
-"""
 
 import os
 import sys
@@ -9,20 +5,21 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.applications import InceptionV3, MobileNetV2
-from tensorflow.keras.applications.inception_v3 import preprocess_input as preprocess_inception
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input as preprocess_mobilenet
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
-from tensorflow.keras.models import Model, load_model
-from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D
+from tensorflow.keras.applications import InceptionV3, MobileNetV2 # type: ignore
+from tensorflow.keras.applications.inception_v3 import preprocess_input as preprocess_inception # type: ignore
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input as preprocess_mobilenet # type: ignore
+from tensorflow.keras.optimizers import Adam # type: ignore
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint # type: ignore
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array # type: ignore
+from tensorflow.keras.models import Model, load_model # type: ignore
+from tensorflow.keras.layers import Dense, Dropout, GlobalAveragePooling2D # type: ignore
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Tuple, List, Optional
+from datetime import datetime
 
 # Configura GPU se disponível
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -33,20 +30,17 @@ if physical_devices:
 else:
     print("Executando em CPU")
 
+# Define caminhos
+base_dir = Path(__file__).parent
+patches_dir = base_dir / "patches"
+clinical_data_path = base_dir / "patient-clinical-data.csv"
+
+ct = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 class BaseALNClassifier:
-    """
-    Classe base com funcionalidades compartilhadas entre Inception e MobileNet
-    """
+
     
     def __init__(self, patches_dir, clinical_data_path):
-        """
-        Inicializa o classificador base
-        
-        Args:
-            patches_dir: Diretório contendo patches organizados por paciente
-            clinical_data_path: Caminho para arquivo CSV com dados clínicos
-        """
         self.patches_dir = Path(patches_dir)
         self.clinical_data_path = clinical_data_path
         self.clinical_data = None
@@ -54,6 +48,7 @@ class BaseALNClassifier:
         self.class_weights = None
         self.num_classes = 3
         self.class_names = ['N0', 'N+(1-2)', 'N+(>2)']
+        self.image_paths = []
         
         # Será definido pelas subclasses
         self.input_size = None
@@ -63,10 +58,9 @@ class BaseALNClassifier:
         self._load_clinical_data()
         
     def _load_clinical_data(self):
-        """Carrega e processa dados clínicos"""
         print("Carregando dados clínicos...")
         self.clinical_data = pd.read_csv(self.clinical_data_path)
-        
+        patches_certos = base_dir / "patches_certos.txt"
         # Mapeia ALN status para códigos numéricos
         aln_mapping = {
             'N0': 0,
@@ -77,58 +71,84 @@ class BaseALNClassifier:
         
         print(f"Dados carregados: {len(self.clinical_data)} pacientes")
         print(f"Distribuição das classes: {self.clinical_data['ALN status'].value_counts().to_dict()}")
+        try:
+            with open(patches_certos, 'r') as f:
+                for line in f:
+                    # Divide a linha no ' - ' e pega a primeira parte (o caminho da imagem)
+                    image_path = line.split(' - ')[0].strip()
+                    self.image_paths.append(image_path)
+        except FileNotFoundError:
+            print(f"Erro: O arquivo '{patches_certos}' não foi encontrado.")
+        except Exception as e:
+            print(f"Ocorreu um erro ao ler o arquivo: {e}")
 
     def prepare_dataset(self, test_size: float = 0.2) -> Dict[str, pd.DataFrame]:
-        """
-        Prepara dataset com divisão correta por paciente
-        SEMPRE USA TODOS OS PATCHES DISPONÍVEIS
-
-        Args:
-            test_size: Proporção para teste (padrão 20%)
-
-        Returns:
-            Dicionário com DataFrames para treino, validação e teste
-        """
-        print(f"\n📁 Preparando dataset completo de patches para {self.model_name}...")
-        print(f"  Usando TODOS os patches disponíveis")
+        print(f"\nPreparando dataset FILTRADO para {self.model_name}...")
+        print(f"  Usando APENAS as imagens selecionadas em patches_certos.txt")
         print(f"  Tamanho de entrada: {self.input_size}")
 
-        # Coleta informações de TODOS os patches
+        if not self.image_paths:
+            raise ValueError("Nenhuma imagem foi carregada de patches_certos.txt!")
+
+        # Coleta informações apenas das imagens selecionadas
         patch_data = []
         patient_patch_counts = {}
+        valid_images = 0
+        invalid_images = 0
 
-        for _, patient_row in self.clinical_data.iterrows():
-            patient_id = str(patient_row['Patient ID'])
-            aln_class = int(patient_row['ALN_encoded'])
-            patient_dir = self.patches_dir / patient_id
+        print(f"\nProcessando {len(self.image_paths)} imagens selecionadas...")
 
-            if not patient_dir.exists():
-                continue
-
-            # Lista TODOS os patches do paciente
-            patch_files = sorted(list(patient_dir.glob("*.jpg")))
-
-            if not patch_files:
-                continue
-
-            patient_patch_counts[patient_id] = len(patch_files)
-
-            # Adiciona TODOS os patches ao dataset
-            for patch_file in patch_files:
+        for image_path in self.image_paths:
+            try:
+                # Extrai ID do paciente do caminho da imagem
+                patient_id = Path(image_path).parent.name
+                
+                # Verifica se o arquivo existe
+                if not Path(image_path).exists():
+                    print(f"Imagem não encontrada: {image_path}")
+                    invalid_images += 1
+                    continue
+                
+                # Busca classe do paciente nos dados clínicos
+                patient_row = self.clinical_data[self.clinical_data['Patient ID'] == int(patient_id)]
+                
+                if patient_row.empty:
+                    print(f"Paciente {patient_id} não encontrado nos dados clínicos")
+                    invalid_images += 1
+                    continue
+                
+                aln_class = int(patient_row['ALN_encoded'].iloc[0])
+                
+                # Conta patches por paciente
+                if patient_id not in patient_patch_counts:
+                    patient_patch_counts[patient_id] = 0
+                patient_patch_counts[patient_id] += 1
+                
+                # Adiciona patch ao dataset
                 patch_data.append({
-                    'patch_path': str(patch_file),
+                    'patch_path': str(image_path),
                     'patient_id': patient_id,
                     'class': aln_class,
                     'class_name': self.class_names[aln_class]
                 })
+                
+                valid_images += 1
+            
+            except Exception as e:
+                print(f"Erro ao processar {image_path}: {e}")
+                invalid_images += 1
+                continue
+        
 
         if not patch_data:
-            raise ValueError("❌ Nenhum patch foi encontrado!")
+            raise ValueError("Nenhum patch válido foi encontrado!")
 
+        print(f"\nResultados do processamento:")
+        print(f"  Imagens válidas: {valid_images}")
+        print(f"  Imagens inválidas: {invalid_images}")
         # Converte para DataFrame
         df_patches = pd.DataFrame(patch_data)
-
-        print(f"\n📊 Estatísticas dos patches:")
+        print(f"\nEstatísticas dos patches selecionados:")
         print(f"  Total de patches: {len(df_patches)}")
         print(f"  Pacientes com patches: {len(patient_patch_counts)}")
         print(f"  Média patches/paciente: {np.mean(list(patient_patch_counts.values())):.1f}")
@@ -136,13 +156,13 @@ class BaseALNClassifier:
         print(f"  Mínimo patches/paciente: {np.min(list(patient_patch_counts.values()))}")
 
         # Distribuição por classe
-        print("\n📊 Distribuição de patches por classe:")
+        print("\nDistribuição de patches por classe:")
         for class_name, count in df_patches['class_name'].value_counts().items():
             percentage = (count / len(df_patches)) * 100
             print(f"  {class_name}: {count} patches ({percentage:.1f}%)")
 
         # DIVISÃO POR PACIENTE (não por patch!)
-        print(f"\n🔄 Dividindo dataset por paciente...")
+        print(f"\nDividindo dataset por paciente...")
 
         # Lista única de pacientes e suas classes
         unique_patients = df_patches['patient_id'].unique()
@@ -152,23 +172,55 @@ class BaseALNClassifier:
             patient_class = df_patches[df_patches['patient_id'] == pid]['class'].iloc[0]
             patient_classes.append(patient_class)
 
+        #  stratify
+        stratify_train_val = patient_classes
+            
         # Primeira divisão: 80% treino+val, 20% teste
-        patients_train_val, patients_test, y_train_val, y_test = train_test_split(
-            unique_patients,
-            patient_classes,
-            test_size=test_size,
-            random_state=42,
-            stratify=patient_classes
-        )
+        try:
+            patients_train_val, patients_test, y_train_val, y_test = train_test_split(
+                unique_patients,
+                patient_classes,
+                test_size=test_size,
+                random_state=42,
+                stratify=stratify_train_val
+            )
+        except ValueError as e:
+            print(f"Erro no stratify, usando divisão aleatória: {e}")
+            patients_train_val, patients_test, y_train_val, y_test = train_test_split(
+                unique_patients,
+                patient_classes,
+                test_size=test_size,
+                random_state=42,
+                stratify=None
+            )
+
+        # Verifica stratify para segunda divisão
+        train_val_class_counts = pd.Series(y_train_val).value_counts()
+        min_train_val_count = train_val_class_counts.min()
+        
+        if min_train_val_count < 2:
+            stratify_train = None
+        else:
+            stratify_train = y_train_val
 
         # Segunda divisão: 75% treino, 25% validação (do conjunto treino+val)
-        patients_train, patients_val, y_train, y_val = train_test_split(
-            patients_train_val,
-            y_train_val,
-            test_size=0.25,
-            random_state=43,
-            stratify=y_train_val
-        )
+        try:
+            patients_train, patients_val, y_train, y_val = train_test_split(
+                patients_train_val,
+                y_train_val,
+                test_size=0.25,
+                random_state=43,
+                stratify=stratify_train
+            )
+        except ValueError as e:
+            print(f"Erro no stratify para validação, usando divisão aleatória: {e}")
+            patients_train, patients_val, y_train, y_val = train_test_split(
+                patients_train_val,
+                y_train_val,
+                test_size=0.25,
+                random_state=43,
+                stratify=None
+            )
 
         # Cria DataFrames finais
         train_patches = df_patches[df_patches['patient_id'].isin(patients_train)]
@@ -181,22 +233,25 @@ class BaseALNClassifier:
         test_patches = test_patches.sample(frac=1, random_state=42).reset_index(drop=True)
 
         # Estatísticas finais
-        print(f"\n✅ Divisão concluída:")
+        print(f"\nDivisão concluída:")
         print(f"  Pacientes treino: {len(patients_train)} ({len(train_patches)} patches)")
         print(f"  Pacientes validação: {len(patients_val)} ({len(val_patches)} patches)")
         print(f"  Pacientes teste: {len(patients_test)} ({len(test_patches)} patches)")
 
         # Verifica distribuição de classes
-        print("\n📊 Distribuição de classes por conjunto:")
+        print("\nDistribuição de classes por conjunto:")
         for split_name, split_df in [('Treino', train_patches),
                                      ('Validação', val_patches),
                                      ('Teste', test_patches)]:
-            dist = split_df['class_name'].value_counts()
-            print(f"\n  {split_name}:")
-            for class_name in self.class_names:
-                count = dist.get(class_name, 0)
-                percentage = (count / len(split_df)) * 100 if len(split_df) > 0 else 0
-                print(f"    {class_name}: {count} ({percentage:.1f}%)")
+            if len(split_df) > 0:
+                dist = split_df['class_name'].value_counts()
+                print(f"\n  {split_name}:")
+                for class_name in self.class_names:
+                    count = dist.get(class_name, 0)
+                    percentage = (count / len(split_df)) * 100 if len(split_df) > 0 else 0
+                    print(f"    {class_name}: {count} ({percentage:.1f}%)")
+            else:
+                print(f"\n  {split_name}: VAZIO")
 
         return {
             'train': train_patches,
@@ -206,32 +261,17 @@ class BaseALNClassifier:
         }
 
     def create_data_generator(self, df_patches, batch_size, shuffle=True, augment=False):
-        """
-        Cria gerador de dados para treinamento
-        
-        Args:
-            df_patches: DataFrame com informações dos patches
-            batch_size: Tamanho do batch
-            shuffle: Se deve embaralhar os dados
-            augment: Se deve aplicar data augmentation
-            
-        Yields:
-            Batches de (imagens, labels)
-        """
-        # Configuração de data augmentation para histologia
-        if augment:
-            datagen = ImageDataGenerator(
-                rotation_range=90,
-                width_shift_range=0.1,
-                height_shift_range=0.1,
-                horizontal_flip=True,
-                vertical_flip=True,
-                zoom_range=0.1,
-                fill_mode='nearest',
-                preprocessing_function=None
-            )
-        else:
-            datagen = ImageDataGenerator(preprocessing_function=None)
+
+        datagen = ImageDataGenerator(
+            rotation_range=90,
+            width_shift_range=0.1,
+            height_shift_range=0.1,
+            horizontal_flip=True,
+            vertical_flip=True,
+            zoom_range=0.1,
+            fill_mode='nearest',
+            preprocessing_function=self.preprocess_input
+        )
             
         while True:
             if shuffle:
@@ -269,7 +309,7 @@ class BaseALNClassifier:
                 yield np.array(batch_images), np.array(batch_labels)
                 
     def calculate_class_weights(self, train_df):
-        """Calcula pesos das classes para balanceamento"""
+
         y_train = train_df['class'].values
         classes = np.unique(y_train)
         
@@ -285,17 +325,7 @@ class BaseALNClassifier:
         return self.class_weights
         
     def train_model(self, datasets, epochs=50, fine_tune_epochs=15):
-        """
-        Treina o modelo com estratégia de two-stage training
-        
-        Args:
-            datasets: Dicionário com datasets de treino, validação e teste
-            epochs: Número de épocas para feature extraction
-            fine_tune_epochs: Número de épocas para fine-tuning
-            
-        Returns:
-            História do treinamento
-        """
+
         train_df = datasets['train']
         val_df = datasets['val']
         
@@ -303,8 +333,7 @@ class BaseALNClassifier:
         self.calculate_class_weights(train_df)
         
         # Define batch size baseado no modelo
-        batch_size = self.get_optimal_batch_size()
-        
+        batch_size = self.get_optimal_batch_size()        
         # Cria geradores
         train_generator = self.create_data_generator(
             train_df, 
@@ -324,7 +353,7 @@ class BaseALNClassifier:
         callbacks = [
             EarlyStopping(
                 monitor='val_loss',
-                patience=7,
+                patience=15,
                 restore_best_weights=True,
                 verbose=1
             ),
@@ -336,7 +365,7 @@ class BaseALNClassifier:
                 verbose=1
             ),
             ModelCheckpoint(
-                f'{self.model_name.lower()}_best.h5',
+                f'{ct}_{self.model_name.lower()}_best.h5',
                 monitor='val_accuracy',
                 save_best_only=True,
                 verbose=1
@@ -347,13 +376,13 @@ class BaseALNClassifier:
         steps_per_epoch = len(train_df) // batch_size
         validation_steps = len(val_df) // batch_size
         
-        print(f"\n🚀 Iniciando treinamento {self.model_name}...")
-        print(f"📊 Batch size: {batch_size}")
-        print(f"📊 Steps por época: {steps_per_epoch}")
-        print(f"📊 Validation steps: {validation_steps}")
+        print(f"\nIniciando treinamento {self.model_name}...")
+        print(f"Batch size: {batch_size}")
+        print(f"Steps por época: {steps_per_epoch}")
+        print(f"Validation steps: {validation_steps}")
         
         # Stage 1: Feature extraction
-        print(f"\n📌 Stage 1: Feature Extraction ({epochs} épocas)")
+        print(f"\nStage 1: Feature Extraction ({epochs} épocas)")
         
         # Reconstrói modelo sem fine-tuning
         self.build_model(fine_tune=False)
@@ -365,13 +394,13 @@ class BaseALNClassifier:
             validation_data=val_generator,
             validation_steps=validation_steps,
             callbacks=callbacks,
-            class_weight=self.class_weights,
+            # class_weight=self.class_weights,
             verbose=1
         )
         
         # Stage 2: Fine-tuning
         if fine_tune_epochs > 0:
-            print(f"\n📌 Stage 2: Fine-tuning ({fine_tune_epochs} épocas)")
+            print(f"\nStage 2: Fine-tuning ({fine_tune_epochs} épocas)")
             
             # Salva pesos e reconstrói com fine-tuning
             weights = self.model.get_weights()
@@ -394,7 +423,7 @@ class BaseALNClassifier:
                     verbose=1
                 ),
                 ModelCheckpoint(
-                    f'{self.model_name.lower()}_finetuned.h5',
+                    f'{ct}_{self.model_name.lower()}_finetuned.h5',
                     monitor='val_accuracy',
                     save_best_only=True,
                     verbose=1
@@ -408,7 +437,7 @@ class BaseALNClassifier:
                 validation_data=val_generator,
                 validation_steps=validation_steps,
                 callbacks=ft_callbacks,
-                class_weight=self.class_weights,
+                # class_weight=self.class_weights,
                 verbose=1
             )
             
@@ -422,22 +451,13 @@ class BaseALNClassifier:
         else:
             history = history_fe.history
             
-        print("\n✅ Treinamento concluído!")
+        print("\nTreinamento concluído!")
         
         return history
         
     def evaluate_model(self, test_df, batch_size=None):
-        """
-        Avalia modelo no conjunto de teste
-        
-        Args:
-            test_df: DataFrame com dados de teste
-            batch_size: Tamanho do batch (None = usa padrão do modelo)
-            
-        Returns:
-            Dicionário com métricas de avaliação
-        """
-        print("\n📊 Avaliando modelo no conjunto de teste...")
+
+        print("\nAvaliando modelo no conjunto de teste...")
         
         if batch_size is None:
             batch_size = self.get_optimal_batch_size()
@@ -478,7 +498,7 @@ class BaseALNClassifier:
             output_dict=True
         )
         
-        print(f"\n✅ Acurácia no teste: {accuracy:.4f}")
+        print(f"\nAcurácia no teste: {accuracy:.4f}")
         print("\n📋 Relatório de classificação:")
         print(classification_report(
             y_true, 
@@ -495,9 +515,8 @@ class BaseALNClassifier:
         }
         
     def save_model(self, filepath):
-        """Salva modelo treinado"""
         self.model.save(filepath)
-        print(f"✅ Modelo salvo em: {filepath}")
+        print(f"Modelo salvo em: {filepath}")
         
     def plot_training_history(self, history):
         """Plota histórico de treinamento"""
@@ -545,27 +564,23 @@ class BaseALNClassifier:
         plt.savefig(f'{self.model_name.lower()}_confusion_matrix.png', dpi=300, bbox_inches='tight')
         plt.show()
 
-
 class InceptionV3Classifier(BaseALNClassifier):
-    """
-    Classificador usando Inception V3
-    """
-    
+
     def __init__(self, patches_dir, clinical_data_path):
         super().__init__(patches_dir, clinical_data_path)
-        self.input_size = (299, 299)
+        self.input_size = (256, 256)
         self.model_name = "InceptionV3"
         self.preprocess_input = preprocess_inception
         
     def build_model(self, fine_tune=True):
-        """Constrói modelo Inception V3"""
+
         print(f"Construindo modelo {self.model_name}...")
         
         # Modelo base
         base_model = InceptionV3(
             weights='imagenet',
             include_top=False,
-            input_shape=(299, 299, 3)
+            input_shape=(256, 256, 3)
         )
         
         # Camadas de classificação
@@ -600,14 +615,9 @@ class InceptionV3Classifier(BaseALNClassifier):
         print(f"Modelo construído! Total de parâmetros: {self.model.count_params():,}")
         
     def get_optimal_batch_size(self):
-        """Retorna batch size otimizado para Inception"""
         return 16  # Inception é pesado, batch menor
 
-
 class MobileNetV2Classifier(BaseALNClassifier):
-    """
-    Classificador usando MobileNet V2
-    """
     
     def __init__(self, patches_dir, clinical_data_path):
         super().__init__(patches_dir, clinical_data_path)
@@ -616,7 +626,7 @@ class MobileNetV2Classifier(BaseALNClassifier):
         self.preprocess_input = preprocess_mobilenet
         
     def build_model(self, fine_tune=True):
-        """Constrói modelo MobileNet V2"""
+
         print(f"Construindo modelo {self.model_name}...")
         
         # Modelo base
@@ -661,29 +671,19 @@ class MobileNetV2Classifier(BaseALNClassifier):
         print(f"Modelo construído! Total de parâmetros: {self.model.count_params():,}")
         
     def get_optimal_batch_size(self):
-        """Retorna batch size otimizado para MobileNet"""
+
         return 32  # MobileNet é leve, batch maior
 
 
 def train_deep_model(model_type="inception"):
-    """
-    Função principal para treinar modelo profundo
-    
-    Args:
-        model_type: "inception" ou "mobilenet"
-    """
-    # Define caminhos
-    base_dir = Path(__file__).parent
-    patches_dir = base_dir / "patches"
-    clinical_data_path = base_dir / "patient-clinical-data.csv"
-    
+
     # Verifica arquivos
     if not patches_dir.exists():
-        print(f"❌ Diretório de patches não encontrado: {patches_dir}")
+        print(f"Diretório de patches não encontrado: {patches_dir}")
         return
         
     if not clinical_data_path.exists():
-        print(f"❌ Arquivo CSV não encontrado: {clinical_data_path}")
+        print(f"Arquivo CSV não encontrado: {clinical_data_path}")
         return
     
     # Cria classificador apropriado
@@ -692,114 +692,103 @@ def train_deep_model(model_type="inception"):
             patches_dir=str(patches_dir),
             clinical_data_path=str(clinical_data_path)
         )
-        epochs_fe = 40  # Feature extraction
-        epochs_ft = 15  # Fine-tuning
+        epochs_fe = 30  # Feature extraction
+        epochs_ft = 10  # Fine-tuning
     else:  # mobilenet
         classifier = MobileNetV2Classifier(
             patches_dir=str(patches_dir),
             clinical_data_path=str(clinical_data_path)
         )
-        epochs_fe = 35  # Feature extraction
-        epochs_ft = 15  # Fine-tuning
+        epochs_fe = 30  # Feature extraction
+        epochs_ft = 20  # Fine-tuning
     
     print(f"\n{'='*80}")
-    print(f"🚀 TREINAMENTO {classifier.model_name.upper()} - DATASET COMPLETO")
+    print(f"TREINAMENTO {classifier.model_name.upper()} - DATASET COMPLETO")
     print(f"{'='*80}")
     
     # Prepara dataset completo
-    print("\n📊 PREPARAÇÃO DOS DADOS")
+    print("\nPREPARAÇÃO DOS DADOS")
     datasets = classifier.prepare_dataset(test_size=0.2)
     
     # Constrói e treina modelo
-    print(f"\n🏗️ CONSTRUÇÃO E TREINAMENTO DO MODELO")
-    history = classifier.train_model(
-        datasets=datasets,
-        epochs=epochs_fe,
-        fine_tune_epochs=epochs_ft
-    )
+    # print(f"\n🏗️ CONSTRUÇÃO E TREINAMENTO DO MODELO")
+    # history = classifier.train_model(
+    #     datasets=datasets,
+    #     epochs=epochs_fe,
+    #     fine_tune_epochs=epochs_ft
+    # )
     
-    # Avalia modelo
-    print("\n📈 AVALIAÇÃO FINAL")
-    results = classifier.evaluate_model(datasets['test'])
+    # # Avalia modelo
+    # print("\n📈 AVALIAÇÃO FINAL")
+    # results = classifier.evaluate_model(datasets['test'])
     
-    # Visualizações
-    print("\n📊 GERANDO VISUALIZAÇÕES")
-    classifier.plot_training_history(history)
-    classifier.plot_confusion_matrix(results['confusion_matrix'])
+    # # Visualizações
+    # print("\nGERANDO VISUALIZAÇÕES")
+    # classifier.plot_training_history(history)
+    # classifier.plot_confusion_matrix(results['confusion_matrix'])
     
-    # Salva modelo final
-    model_path = base_dir / f"{classifier.model_name.lower()}_aln_final.h5"
-    classifier.save_model(str(model_path))
+    # # Salva modelo final
+    # model_path = base_dir / f"{classifier.model_name.lower()}_aln_final.h5"
+    # classifier.save_model(str(model_path))
     
-    # Relatório final
-    print(f"\n{'='*60}")
-    print("📋 RELATÓRIO FINAL")
-    print(f"{'='*60}")
-    print(f"✅ Modelo: {classifier.model_name}")
-    print(f"🎯 Acurácia final: {results['accuracy']:.4f}")
-    print(f"💾 Modelo salvo em: {model_path}")
+    # # Relatório final
+    # print(f"\n{'='*60}")
+    # print("📋 RELATÓRIO FINAL")
+    # print(f"{'='*60}")
+    # print(f"Modelo: {classifier.model_name}")
+    # print(f"Acurácia final: {results['accuracy']:.4f}")
+    # print(f"💾 Modelo salvo em: {model_path}")
     
-    # Métricas por classe
-    report = results['classification_report']
-    print("\n📊 Métricas por classe:")
-    for class_name in classifier.class_names:
-        if class_name in report:
-            metrics = report[class_name]
-            print(f"  {class_name}: P={metrics['precision']:.3f}, "
-                  f"R={metrics['recall']:.3f}, "
-                  f"F1={metrics['f1-score']:.3f}, "
-                  f"N={metrics['support']}")
+    # # Métricas por classe
+    # report = results['classification_report']
+    # print("\nMétricas por classe:")
+    # for class_name in classifier.class_names:
+    #     if class_name in report:
+    #         metrics = report[class_name]
+    #         print(f"  {class_name}: P={metrics['precision']:.3f}, "
+    #               f"R={metrics['recall']:.3f}, "
+    #               f"F1={metrics['f1-score']:.3f}, "
+    #               f"N={metrics['support']}")
     
-    # Estatísticas do dataset
-    print(f"\n📈 Estatísticas do treinamento:")
-    print(f"  Total de patches: {len(datasets['all'])}")
-    print(f"  Patches treino: {len(datasets['train'])}")
-    print(f"  Patches validação: {len(datasets['val'])}")
-    print(f"  Patches teste: {len(datasets['test'])}")
-    print(f"  Épocas totais: {epochs_fe + epochs_ft}")
-    
+    # # Estatísticas do dataset
+    # print(f"\n📈 Estatísticas do treinamento:")
+    # print(f"  Total de patches: {len(datasets['all'])}")
+    # print(f"  Patches treino: {len(datasets['train'])}")
+    # print(f"  Patches validação: {len(datasets['val'])}")
+    # print(f"  Patches teste: {len(datasets['test'])}")
+    # print(f"  Épocas totais: {epochs_fe + epochs_ft}")
+
     return classifier, history, results
 
 
 def main():
-    """Função principal com interface simples"""
     print("\n" + "="*80)
-    print("🧠 CLASSIFICAÇÃO DE METÁSTASE ALN - MODELOS PROFUNDOS")
+    print("CLASSIFICAÇÃO DE METÁSTASE ALN - MODELOS PROFUNDOS")
     print("="*80)
     print("\nEscolha o modelo para treinar com o dataset COMPLETO:")
     print("1. Inception V3 (máxima acurácia, ~23.8M parâmetros)")
     print("2. MobileNet V2 (eficiente, ~3.5M parâmetros)")
     print("\n0. Sair")
     
-    choice = input("\n👉 Digite sua escolha (0-2): ").strip()
+    choice = input("\nDigite sua escolha (0-2): ").strip()
     
     if choice == "1":
-        print("\n🎯 Iniciando treinamento com INCEPTION V3...")
-        print("⏱️ Tempo estimado: 3-5 horas (dependendo da GPU)")
-        confirm = input("\nConfirmar? (s/N): ")
-        if confirm.lower() == 's':
-            train_deep_model("inception")
-        else:
-            print("❌ Treinamento cancelado")
+        print("\nIniciando treinamento com INCEPTION V3...")
+        train_deep_model("inception")
             
     elif choice == "2":
-        print("\n🚀 Iniciando treinamento com MOBILENET V2...")
-        print("⏱️ Tempo estimado: 1-2 horas (dependendo da GPU)")
-        confirm = input("\nConfirmar? (s/N): ")
-        if confirm.lower() == 's':
-            train_deep_model("mobilenet")
-        else:
-            print("❌ Treinamento cancelado")
+        print("\nIniciando treinamento com MOBILENET V2...")
+        train_deep_model("mobilenet")
             
     elif choice == "0":
-        print("\n👋 Saindo...")
+        print("\nSaindo...")
         return
         
     else:
-        print("\n❌ Opção inválida!")
+        print("\nOpção inválida!")
         return
     
-    print("\n🎉 Processo concluído!")
+    print("\nProcesso concluído!")
 
 
 if __name__ == "__main__":
