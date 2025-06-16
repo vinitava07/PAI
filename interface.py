@@ -818,10 +818,10 @@ class BreastCancerAnalysisGUI:
                 
                 # Define o tamanho de entrada baseado no modelo
                 if model_type == "inception":
-                    input_size = (299, 299)
+                    input_size = (256, 256)
                     model_file = "inception_model.h5"
                 else:  # mobilenet
-                    input_size = (224, 224)
+                    input_size = (256, 256)
                     model_file = "mobilenet_model.h5"
                 
                 # Carrega e pré-processa a imagem

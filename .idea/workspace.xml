@@ -6,6 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="36db1c9d-1e9d-41f6-ada0-68b0d9dc2d80" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/interface.py" beforeDir="false" afterPath="$PROJECT_DIR$/interface.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -31,7 +32,7 @@
     "Python.segmentation.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "super__merge",
+    "git-widget-placeholder": "super__fix",
     "last_opened_file_path": "/home/leonardo/Documents/PUC/6. Semestre VI/Processamento e Análise de Imagens/PAI",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
