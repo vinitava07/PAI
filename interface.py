@@ -526,7 +526,7 @@ class BreastCancerAnalysisGUI:
             
     def segment_image(self):
         """
-        Realiza a segmentação da imagem e exibe os resultados
+        Realiza a segmentação da imagem e exibe os resultados integrados ao tkinter
         """
         if self.current_image_path is None:
             return
@@ -536,20 +536,26 @@ class BreastCancerAnalysisGUI:
             messagebox.showinfo(
                 "Processando",
                 "A segmentação está sendo realizada.\n"
-                "Os resultados serão exibidos em uma nova janela."
+                "Os resultados serão exibidos na interface."
             )
             
-            # Desabilita temporariamente o matplotlib interativo
-            plt.ioff()
+            # Salva o backend atual
+            current_backend = matplotlib.get_backend()
             
-            # Realiza a segmentação com visualização
+            # Temporariamente muda para backend compatível com salvamento
+            matplotlib.use('Agg')
+            
+            # Realiza a segmentação SEM visualização automática
             features, stats, labeled = self.segmenter.process_image(
                 self.current_image_path,
-                visualize=True
+                visualize=False  # ❌ Não usa plt.show()
             )
             
-            # Fecha todas as figuras matplotlib
-            plt.close('all')
+            # Gera visualização customizada para tkinter
+            self.create_segmentation_visualization(labeled, features, stats)
+            
+            # Restaura o backend original
+            matplotlib.use(current_backend)
             
             # Exibe estatísticas resumidas
             if stats:
@@ -568,6 +574,146 @@ class BreastCancerAnalysisGUI:
                 
         except Exception as e:
             messagebox.showerror("Erro", f"Erro na segmentação:\n{str(e)}")
+
+    def create_segmentation_visualization(self, labeled_image, features_df, stats):
+        """
+        Cria visualização da segmentação integrada ao tkinter
+        """
+        try:
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            import matplotlib.pyplot as plt
+            import cv2
+            import numpy as np
+            from matplotlib.colors import ListedColormap
+            import matplotlib.cm as cm
+            
+            # Limpa o canvas atual
+            for widget in self.canvas_content.winfo_children():
+                widget.destroy()
+                
+            # Cria nova janela para visualização da segmentação
+            seg_window = tk.Toplevel(self.root)
+            seg_window.title("Resultados da Segmentação")
+            seg_window.geometry("1400x800")
+            
+            # Frame principal com scroll
+            main_frame = tk.Frame(seg_window)
+            main_frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Canvas com scrollbar para a visualização
+            canvas = tk.Canvas(main_frame)
+            scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+            scrollable_frame = tk.Frame(canvas)
+            
+            scrollable_frame.bind(
+                "<Configure>",
+                lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            )
+            
+            canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+            canvas.configure(yscrollcommand=scrollbar.set)
+            
+            # Cria a figura matplotlib
+            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+            
+            # 1. Imagem original
+            if self.segmenter.original_image is not None:
+                axes[0, 0].imshow(cv2.cvtColor(self.segmenter.original_image, cv2.COLOR_BGR2RGB))
+                axes[0, 0].set_title('Imagem H&E Original')
+                axes[0, 0].axis('off')
+            
+            # 2. Canal de hematoxilina
+            if self.segmenter.hematoxylin_channel is not None:
+                axes[0, 1].imshow(self.segmenter.hematoxylin_channel, cmap='gray')
+                axes[0, 1].set_title('Canal de Hematoxilina (Núcleos)')
+                axes[0, 1].axis('off')
+            
+            # 3. Núcleos segmentados
+            num_labels = len(np.unique(labeled_image))
+            colors = cm.rainbow(np.linspace(0, 1, num_labels))
+            colors[0] = [0, 0, 0, 1]  # Fundo preto
+            cmap = ListedColormap(colors)
+            
+            axes[0, 2].imshow(labeled_image, cmap=cmap)
+            axes[0, 2].set_title(f'Núcleos Segmentados (n={len(features_df)})')
+            axes[0, 2].axis('off')
+            
+            # 4. Overlay de contornos
+            if self.segmenter.original_image is not None:
+                overlay = cv2.cvtColor(self.segmenter.original_image, cv2.COLOR_BGR2RGB).copy()
+                
+                # Desenha contornos e centroides
+                for _, nucleus in features_df.iterrows():
+                    # Cria máscara para este núcleo
+                    mask = (labeled_image == nucleus['nucleus_id']).astype(np.uint8)
+                    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    
+                    # Desenha contorno em verde
+                    cv2.drawContours(overlay, contours, -1, (0, 255, 0), 2)
+                    
+                    # Marca centroide em vermelho
+                    cx, cy = int(nucleus['centroid_x']), int(nucleus['centroid_y'])
+                    cv2.circle(overlay, (cx, cy), 3, (255, 0, 0), -1)
+                
+                axes[1, 0].imshow(overlay)
+                axes[1, 0].set_title('Contornos e Centroides')
+                axes[1, 0].axis('off')
+            
+            # 5. Scatter plot: Área vs Circularidade
+            if not features_df.empty:
+                scatter = axes[1, 1].scatter(features_df['area'],
+                                           features_df['circularity'],
+                                           c=features_df['eccentricity'],
+                                           cmap='viridis',
+                                           alpha=0.6)
+                axes[1, 1].set_xlabel('Área (pixels)')
+                axes[1, 1].set_ylabel('Circularidade')
+                axes[1, 1].set_title('Características dos Núcleos')
+                plt.colorbar(scatter, ax=axes[1, 1], label='Excentricidade')
+            
+            # 6. Estatísticas
+            axes[1, 2].axis('off')
+            if stats:
+                stats_text = "ESTATÍSTICAS DOS NÚCLEOS\n" + "="*35 + "\n\n"
+                stats_text += f"Total de núcleos: {stats['num_nuclei']}\n\n"
+                
+                for feature in ['area', 'circularity', 'eccentricity', 'normalized_nn_distance']:
+                    stats_text += f"{feature.replace('_', ' ').title()}:\n"
+                    stats_text += f"  Média: {stats[feature]['mean']:.3f}\n"
+                    stats_text += f"  Desvio: {stats[feature]['std']:.3f}\n\n"
+                
+                axes[1, 2].text(0.05, 0.95, stats_text, transform=axes[1, 2].transAxes,
+                               fontsize=10, verticalalignment='top',
+                               fontfamily='monospace',
+                               bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+            
+            plt.suptitle('Análise de Segmentação de Núcleos - Imagem H&E', fontsize=14)
+            plt.tight_layout()
+            
+            # Integra matplotlib com tkinter
+            canvas_widget = FigureCanvasTkAgg(fig, scrollable_frame)
+            canvas_widget.draw()
+            canvas_widget.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            # Empacota o canvas e scrollbar
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+            
+            # Botão para fechar
+            close_btn = ttk.Button(seg_window, text="Fechar", command=seg_window.destroy)
+            close_btn.pack(pady=10)
+            
+            # Torna a janela responsiva ao scroll do mouse
+            def _on_mousewheel(event):
+                canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+            
+            print("✓ Visualização da segmentação criada com sucesso!")
+            
+        except Exception as e:
+            print(f"Erro ao criar visualização: {e}")
+            messagebox.showerror("Erro", f"Erro ao criar visualização:\n{str(e)}")
+
             
     def show_classification_menu(self):
         """
