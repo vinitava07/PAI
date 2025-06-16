@@ -23,7 +23,7 @@ sys.path.append(str(Path(__file__).parent / "segmentation"))
 sys.path.append(str(Path(__file__).parent / "xgboost"))
 
 # Importa os módulos do projeto
-from segmentation import HENucleusSegmentation
+from process import HENucleusSegmentation
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 import pickle
@@ -808,14 +808,14 @@ class BreastCancerAnalysisGUI:
                 # Faz a predição
                 prediction = model.predict(feature_vector)[0]
                 probabilities = model.predict_proba(feature_vector)[0]
-                
+
             else:
                 # Para modelos de deep learning
                 messagebox.showinfo(
                     "Processando",
                     f"Classificando imagem com {model_type.upper()}..."
                 )
-                
+
                 # Define o tamanho de entrada baseado no modelo
                 if model_type == "inception":
                     input_size = (256, 256)
@@ -823,26 +823,26 @@ class BreastCancerAnalysisGUI:
                 else:  # mobilenet
                     input_size = (256, 256)
                     model_file = "mobilenet_model.h5"
-                
+
                 # Carrega e pré-processa a imagem
                 img = cv2.imread(self.current_image_path)
                 img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                 img = cv2.resize(img, input_size)
                 img = np.expand_dims(img, axis=0)
-                
+
                 # Normaliza baseado no modelo
                 if model_type == "inception":
                     img = tf.keras.applications.inception_v3.preprocess_input(img)
                 else:
                     img = tf.keras.applications.mobilenet_v2.preprocess_input(img)
-                
+
                 # Carrega o modelo
                 model = load_model(model_path / model_file)
-                
+
                 # Faz a predição
                 probabilities = model.predict(img)[0]
                 prediction = np.argmax(probabilities)
-                
+
             # Classes
             classes = ['N0', 'N+(1-2)', 'N+(>2)']
             predicted_class = classes[prediction]
