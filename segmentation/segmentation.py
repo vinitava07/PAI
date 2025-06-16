@@ -1,21 +1,22 @@
 import cv2
 import numpy as np
 from scipy import ndimage
-from skimage import morphology, measure
-from skimage.feature import peak_local_max
-from skimage.segmentation import watershed
+from skimage import morphology, measure # type: ignore
+from skimage.feature import peak_local_max # type: ignore
+from skimage.segmentation import watershed # type: ignore
 import matplotlib.pyplot as plt
-from skimage.color import rgb2hed
+from skimage.color import rgb2hed # type: ignore
 import pandas as pd
 from pathlib import Path
 import concurrent.futures
 import multiprocessing
 
+base_dir = Path(__file__).parent.parent
+patches_dir = base_dir / "patches"
+clinical_data_path = base_dir / "patient-clinical-data.csv"
+patches_certos = base_dir / "patches_certos.txt"
+
 class HENucleusSegmentation:
-    """
-    Segmentação especializada para imagens histológicas coradas com H&E
-    Otimizada para detectar núcleos (estruturas roxas/azuis)
-    """
 
     # Adicione esta função para filtrar melhor:
     def is_valid_nucleus(self, region):
@@ -35,15 +36,7 @@ class HENucleusSegmentation:
         self.nucleus_features = []
 
     def preprocess_he_image(self, image_path):
-        """
-        Pré-processa imagem H&E separando os canais de cor
 
-        Args:
-            image_path: Caminho da imagem H&E
-
-        Returns:
-            hematoxylin_channel: Canal de hematoxilina isolado
-        """
         # print("Carregando e pré-processando imagem H&E...")
 
         # Carrega a imagem
@@ -88,18 +81,8 @@ class HENucleusSegmentation:
 
         return self.hematoxylin_channel
 
-
     def segment_nuclei_he(self, hematoxylin_channel):
-        """
-        Segmenta núcleos do canal de hematoxilina
 
-        Args:
-            hematoxylin_channel: Canal isolado de hematoxilina
-
-        Returns:
-            labeled_nuclei: Núcleos rotulados
-            binary_mask: Máscara binária dos núcleos
-        """
         # print("Segmentando núcleos...")
 
         # 1. Suavização para reduzir ruído
@@ -184,15 +167,7 @@ class HENucleusSegmentation:
         return labeled_nuclei, binary_mask
 
     def clear_border_nuclei(self, labeled_image):
-        """
-        Remove núcleos que tocam as bordas da imagem
 
-        Args:
-            labeled_image: Imagem com núcleos rotulados
-
-        Returns:
-            cleaned_image: Imagem sem núcleos nas bordas
-        """
         h, w = labeled_image.shape
         border_labels = set()
 
@@ -217,15 +192,6 @@ class HENucleusSegmentation:
         return cleaned
 
     def extract_nucleus_features(self, labeled_image):
-        """
-        Extrai características dos núcleos conforme especificado no projeto
-
-        Args:
-            labeled_image: Imagem com núcleos rotulados
-
-        Returns:
-            features_df: DataFrame com características de cada núcleo
-        """
         # print("Extraindo características dos núcleos...")
 
         # Usa o canal de hematoxilina como imagem de intensidade
@@ -297,15 +263,7 @@ class HENucleusSegmentation:
         return features_df
 
     def calculate_statistics(self, features_df):
-        """
-        Calcula estatísticas resumidas das características
 
-        Args:
-            features_df: DataFrame com características dos núcleos
-
-        Returns:
-            stats_dict: Dicionário com média e desvio padrão
-        """
         if features_df.empty:
             return None
 
@@ -460,7 +418,6 @@ class HENucleusSegmentation:
             print(f"Erro no processamento: {str(e)}")
             raise
 
-
 def process_single_image(arquivo):
     """
     Função auxiliar para processar uma única imagem
@@ -494,160 +451,7 @@ def process_single_image(arquivo):
             'success': False
         }
 
-
-# Função auxiliar para processar múltiplas imagens
-def process_batch_images(dir_path, output_dir=None, max_workers=None, max_images=100):
-    """
-    Processa múltiplas imagens H&E em paralelo
-
-    Args:
-        dir_path: Diretório com as imagens
-        output_dir: Diretório para salvar resultados
-        max_workers: Número máximo de processos paralelos (None = auto)
-        max_images: Número máximo de imagens para processar
-
-    Returns:
-        all_results: Lista com resultados de cada imagem
-    """
-    # Coleta todos os arquivos de imagem primeiro
-    image_files = []
-    contador = 0
-
-    for arquivo in dir_path.rglob('*'):
-        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg':
-            image_files.append(arquivo)
-            contador += 1
-
-    print(f"Processando {len(image_files)} imagens em paralelo...")
-
-    # Define número de workers se não especificado
-    if max_workers is None:
-        max_workers = min(multiprocessing.cpu_count(), len(image_files))
-
-    all_results = []
-    selected_patch_from_patient = {}
-
-    # Processa imagens em paralelo
-    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        # Submete todas as tarefas
-        future_to_file = {executor.submit(process_single_image, arquivo): arquivo
-                          for arquivo in image_files}
-
-        # Coleta resultados conforme vão sendo completados
-        for future in concurrent.futures.as_completed(future_to_file):
-            arquivo = future_to_file[future]
-            try:
-                result = future.result()
-                all_results.append(result)
-
-                # Se processou com sucesso, verifica se é o melhor patch do paciente
-                if result['success']:
-                    patient_name = arquivo.parent.name
-                    if patient_name in selected_patch_from_patient:
-                        current_best = selected_patch_from_patient[patient_name]
-                        if result['statistics']['num_nuclei'] > current_best['statistics']['num_nuclei']:
-                            selected_patch_from_patient[patient_name] = result
-                    else:
-                        selected_patch_from_patient[patient_name] = result
-
-                # print(f"Processado: {arquivo.name} - Status: {'Sucesso' if result['success'] else 'Erro'}")
-
-            except Exception as exc:
-                print(f"Erro inesperado ao processar {arquivo}: {exc}")
-                all_results.append({
-                    'image_path': arquivo,
-                    'error': str(exc),
-                    'success': False
-                })
-
-    # Salva os melhores patches por paciente
-    with open("patches_certos_claude.txt", "w", encoding="utf-8") as f:
-        for paciente in selected_patch_from_patient.values():
-            f.write(f"{paciente['image_path']} - {paciente['statistics']['num_nuclei']}\n")
-
-    # print([f"paciente: {x['image_path']} {x['statistics']['num_nuclei']}"
-    #        for x in selected_patch_from_patient.values()])
-
-    return all_results
-
-
-# Exemplo de uso
-if __name__ == "__main__":
-    # Para uma única imagem
-    segmenter = HENucleusSegmentation()
-
-    # Substitua pelo caminho da sua imagem
-    base_dir = Path(__file__).parent.parent
-    patches_dir = base_dir / "patches"
-    clinical_data_path = base_dir / "patient-clinical-data.csv"
-    patches_certos = base_dir / "patches_certos.txt"
-
-    image_paths = []
-    try:
-        with open(patches_certos, 'r') as f:
-            for line in f:
-                # Divide a linha no ' - ' e pega a primeira parte (o caminho da imagem)
-                image_path = line.split(' - ')[0].strip()
-                image_paths.append(image_path)
-    except FileNotFoundError:
-        print(f"Erro: O arquivo '{patches_certos}' não foi encontrado.")
-    except Exception as e:
-        print(f"Ocorreu um erro ao ler o arquivo: {e}")
-    # print(image_paths)
-
-    df = pd.read_csv(clinical_data_path)
-    general_stats = {"area": [[], [], []], "circularity": [[], [], []], "eccentricity": [[],[], []], "normalized_nn_distance": [[], [], []]}
-    lista = [0] * 1058
-    count = 0
-
-    rows = []
-
-    #Processa todas as imagens e cria um csv com os atributos dela
-    for image in image_paths:
-        patient_id = Path(image).parent.name
-        patient_class = df.loc[df['Patient ID'] == int(patient_id), 'ALN status'].values[0]
-        features_df, stats, labeled = segmenter.process_image(image, visualize=False)
-        num_nuclei = len(features_df)
-        area_mean = features_df['area'].mean()
-        area_std = features_df['area'].std()
-        circ_mean = features_df['circularity'].mean()
-        circ_std = features_df['circularity'].std()
-        ecc_mean = features_df['eccentricity'].mean()
-        ecc_std = features_df['eccentricity'].std()
-        nnd_mean = features_df['normalized_nn_distance'].mean()
-        nnd_std = features_df['normalized_nn_distance'].std()
-        rows.append({
-        'patient_id': patient_id,
-        'num_nuclei': num_nuclei,
-        'area_mean': area_mean,
-        'area_std': area_std,
-        'circularity_mean': circ_mean,
-        'circularity_std': circ_std,
-        'eccentricity_mean': ecc_mean,
-        'eccentricity_std': ecc_std,
-        'normalized_nn_distance_mean': nnd_mean,
-        'normalized_nn_distance_std': nnd_std
-        })
-        if patient_class == "N0":
-            general_stats["area"][0].append(stats["area"]['mean'])
-            general_stats["circularity"][0].append(stats["circularity"]['mean'])
-            general_stats["normalized_nn_distance"][0].append(stats["normalized_nn_distance"]['mean'])
-            general_stats["eccentricity"][0].append(stats["eccentricity"]['mean'])
-        elif patient_class == "N+(>2)":
-            general_stats["area"][2].append(stats["area"]['mean'])
-            general_stats["circularity"][2].append(stats["circularity"]['mean'])
-            general_stats["normalized_nn_distance"][2].append(stats["normalized_nn_distance"]['mean'])
-            general_stats["eccentricity"][2].append(stats["eccentricity"]['mean'])
-        else:
-            general_stats["area"][1].append(stats["area"]['mean'])
-            general_stats["circularity"][1].append(stats["circularity"]['mean'])
-            general_stats["normalized_nn_distance"][1].append(stats["normalized_nn_distance"]['mean'])
-            general_stats["eccentricity"][1].append(stats["eccentricity"]['mean'])
-
-    
-        count+=1
-    # print(general_stats)
-
+def plot_figures(general_stats, rows):
     df_stats = pd.DataFrame(rows)
     df_stats.to_csv('stats_imagens.csv', index=False)
     print(f"Salvo {len(df_stats)} linhas em stats_imagens.csv")
@@ -711,21 +515,136 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-    # all_results = process_batch_images(
-    #     patches_dir,
-    #     max_workers=None  # ou especifique um número como 4, 8, etc.
-    # )    # print(all_results)
-    # print("cabo")
+def process_image_to_csv_segment(max_images=1059, segmenter=None, image_paths=[]):
+    #Processa todas as imagens e cria um csv com os atributos dela
+    df = pd.read_csv(clinical_data_path)
+    general_stats = {"area": [[], [], []], "circularity": [[], [], []], "eccentricity": [[],[], []], "normalized_nn_distance": [[], [], []]}
+    count = 0
+    rows = []
+    for image in image_paths:
+        if count < max_images:
+            patient_id = Path(image).parent.name
+            patient_class = df.loc[df['Patient ID'] == int(patient_id), 'ALN status'].values[0]
+            features_df, stats, labeled = segmenter.process_image(image, visualize=False)
+            num_nuclei = len(features_df)
+            area_mean = features_df['area'].mean()
+            area_std = features_df['area'].std()
+            circ_mean = features_df['circularity'].mean()
+            circ_std = features_df['circularity'].std()
+            ecc_mean = features_df['eccentricity'].mean()
+            ecc_std = features_df['eccentricity'].std()
+            nnd_mean = features_df['normalized_nn_distance'].mean()
+            nnd_std = features_df['normalized_nn_distance'].std()
+            rows.append({
+            'patient_id': patient_id,
+            'num_nuclei': num_nuclei,
+            'area_mean': area_mean,
+            'area_std': area_std,
+            'circularity_mean': circ_mean,
+            'circularity_std': circ_std,
+            'eccentricity_mean': ecc_mean,
+            'eccentricity_std': ecc_std,
+            'normalized_nn_distance_mean': nnd_mean,
+            'normalized_nn_distance_std': nnd_std
+            })
+            if patient_class == "N0":
+                general_stats["area"][0].append(stats["area"]['mean'])
+                general_stats["circularity"][0].append(stats["circularity"]['mean'])
+                general_stats["normalized_nn_distance"][0].append(stats["normalized_nn_distance"]['mean'])
+                general_stats["eccentricity"][0].append(stats["eccentricity"]['mean'])
+            elif patient_class == "N+(>2)":
+                general_stats["area"][2].append(stats["area"]['mean'])
+                general_stats["circularity"][2].append(stats["circularity"]['mean'])
+                general_stats["normalized_nn_distance"][2].append(stats["normalized_nn_distance"]['mean'])
+                general_stats["eccentricity"][2].append(stats["eccentricity"]['mean'])
+            else:
+                general_stats["area"][1].append(stats["area"]['mean'])
+                general_stats["circularity"][1].append(stats["circularity"]['mean'])
+                general_stats["normalized_nn_distance"][1].append(stats["normalized_nn_distance"]['mean'])
+                general_stats["eccentricity"][1].append(stats["eccentricity"]['mean'])
+        count+=1
+    plot_figures(general_stats, rows)
+    # print(general_stats)
+# Função auxiliar para processar múltiplas imagens
+def process_batch_images(dir_path, output_dir=None, max_workers=None, max_images=100):
+    # Coleta todos os arquivos de imagem primeiro
+    image_files = []
+    contador = 0
 
+    for arquivo in dir_path.rglob('*'):
+        if arquivo.is_file() and arquivo.suffix.lower() == '.jpg':
+            image_files.append(arquivo)
+            contador += 1
 
+    print(f"Processando {len(image_files)} imagens em paralelo...")
 
-    # Exibe resumo
-    # if stats:
-    #     print("\n" + "="*50)
-    #     print("RESUMO DA ANÁLISE")
-    #     print("="*50)
-    #     print(f"Total de núcleos detectados: {stats['num_nuclei']}")
-    #     print(f"Área média: {stats['area']['mean']:.2f} ± {stats['area']['std']:.2f} pixels")
-    #     print(f"Circularidade média: {stats['circularity']['mean']:.3f} ± {stats['circularity']['std']:.3f}")
-    #     print(f"Excentricidade média: {stats['eccentricity']['mean']:.3f} ± {stats['eccentricity']['std']:.3f}")
-    #     print(f"Distância NN normalizada: {stats['normalized_nn_distance']['mean']:.3f} ± {stats['normalized_nn_distance']['std']:.3f}")
+    # Define número de workers se não especificado
+    if max_workers is None:
+        max_workers = min(multiprocessing.cpu_count(), len(image_files))
+
+    all_results = []
+    selected_patch_from_patient = {}
+
+    # Processa imagens em paralelo
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submete todas as tarefas
+        future_to_file = {executor.submit(process_single_image, arquivo): arquivo
+                          for arquivo in image_files}
+
+        # Coleta resultados conforme vão sendo completados
+        for future in concurrent.futures.as_completed(future_to_file):
+            arquivo = future_to_file[future]
+            try:
+                result = future.result()
+                all_results.append(result)
+
+                # Se processou com sucesso, verifica se é o melhor patch do paciente
+                if result['success']:
+                    patient_name = arquivo.parent.name
+                    if patient_name in selected_patch_from_patient:
+                        current_best = selected_patch_from_patient[patient_name]
+                        if result['statistics']['num_nuclei'] > current_best['statistics']['num_nuclei']:
+                            selected_patch_from_patient[patient_name] = result
+                    else:
+                        selected_patch_from_patient[patient_name] = result
+
+                # print(f"Processado: {arquivo.name} - Status: {'Sucesso' if result['success'] else 'Erro'}")
+
+            except Exception as exc:
+                print(f"Erro inesperado ao processar {arquivo}: {exc}")
+                all_results.append({
+                    'image_path': arquivo,
+                    'error': str(exc),
+                    'success': False
+                })
+
+    # Salva os melhores patches por paciente
+    with open("patches_certos_claude.txt", "w", encoding="utf-8") as f:
+        for paciente in selected_patch_from_patient.values():
+            f.write(f"{paciente['image_path']} - {paciente['statistics']['num_nuclei']}\n")
+
+    # print([f"paciente: {x['image_path']} {x['statistics']['num_nuclei']}"
+    #        for x in selected_patch_from_patient.values()])
+
+    return all_results
+
+def segmentation_run(max_rows=1059):
+    segmenter = HENucleusSegmentation()
+    image_paths = []
+    try:
+        with open(patches_certos, 'r') as f:
+            for line in f:
+                # Divide a linha no ' - ' e pega a primeira parte (o caminho da imagem)
+                image_path = line.split(' - ')[0].strip()
+                image_paths.append(image_path)
+    except FileNotFoundError:
+        print(f"Erro: O arquivo '{patches_certos}' não foi encontrado.")
+    except Exception as e:
+        print(f"Ocorreu um erro ao ler o arquivo: {e}")
+
+    process_image_to_csv_segment(max_rows, segmenter, image_paths)
+
+# Exemplo de uso
+if __name__ == "__main__":
+    # Para uma única imagem
+    segmentation_run(20)
