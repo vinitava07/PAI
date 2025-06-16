@@ -777,37 +777,83 @@ class BreastCancerAnalysisGUI:
             model_path = Path(__file__).parent / "models"
             
             if model_type == "xgboost":
-                # Para XGBoost, primeiro precisa extrair features
-                messagebox.showinfo(
-                    "Processando",
-                    "Extraindo características da imagem para classificação..."
-                )
+messagebox.showinfo(
+                "Processando",
+                "Classificando com XGBoost usando features de segmentação..."
+            )
+            
+            try:
+                # Extrai patient_id do caminho da imagem
+                patient_id = Path(self.current_image_path).parent.name
+                print(f"Patient ID extraído: {patient_id}")
                 
-                # Extrai features usando o segmentador
-                features, stats, _ = self.segmenter.process_image(
-                    self.current_image_path,
-                    visualize=False
-                )
+                # Inicializa classificador XGBoost de segmentação
+                xgb_classifier = SegmentationXGBoostClassifier()
                 
-                # Carrega o modelo XGBoost
-                with open(model_path / "xgboost_model.pkl", 'rb') as f:
-                    model = pickle.load(f)
+                # Carrega modelo salvo
+                model_file_path = model_path / "xgboost_segmentation_model.pkl"
+                if not model_file_path.exists():
+                    messagebox.showerror(
+                        "Modelo não encontrado",
+                        f"Modelo XGBoost não encontrado em: {model_file_path}\n\n"
+                        "Execute o treinamento do modelo XGBoost primeiro."
+                    )
+                    return
                 
-                # Prepara features para classificação
-                feature_vector = np.array([
-                    stats['area']['mean'],
-                    stats['area']['std'],
-                    stats['circularity']['mean'],
-                    stats['circularity']['std'],
-                    stats['eccentricity']['mean'],
-                    stats['eccentricity']['std'],
-                    stats['normalized_nn_distance']['mean'],
-                    stats['normalized_nn_distance']['std']
-                ]).reshape(1, -1)
+                # Carrega modelo
+                xgb_classifier.load_model(model_file_path)
                 
-                # Faz a predição
-                prediction = model.predict(feature_vector)[0]
-                probabilities = model.predict_proba(feature_vector)[0]
+                # Faz predição para o paciente
+                result = xgb_classifier.predict_single_patient(patient_id)
+                
+                # Extrai resultados
+                predicted_class = result['predicted_class']
+                probabilities = result['probabilities']
+                confidence = result['confidence']
+                
+                # Mapeia para o formato esperado pela interface
+                # Classes: ['N0', 'N+(1-2)', 'N+(>2)']
+                prob_array = [
+                    probabilities['N0'],
+                    probabilities['N+(1-2)'],
+                    probabilities['N+(>2)']
+                ]
+                
+                # Mostra resultado
+                result_text = f"""
+                Classificação XGBoost concluída!
+                
+                Paciente ID: {patient_id}
+                Classe predita: {predicted_class}
+                Confiança: {confidence:.2%}
+                
+                Probabilidades:
+                • N0: {probabilities['N0']:.2%}
+                • N+(1-2): {probabilities['N+(1-2)']:.2%}
+                • N+(>2): {probabilities['N+(>2)']:.2%}
+                
+                Features utilizadas:
+                • Número de núcleos
+                • Área média e desvio padrão
+                • Circularidade média e desvio padrão  
+                • Excentricidade média e desvio padrão
+                • Distância normalizada média e desvio padrão
+                """
+                
+                messagebox.showinfo("Resultado da Classificação XGBoost", result_text)
+                except ValueError as ve:
+                    if "não encontrado nos dados" in str(ve):
+                        messagebox.showerror(
+                            "Paciente não encontrado",
+                            f"O paciente {patient_id} não foi encontrado na base de dados de segmentação.\n\n"
+                            "Certifique-se de que:\n"
+                            "1. A imagem pertence a um paciente válido\n"
+                            "2. O paciente está no arquivo stats_imagens_certo.csv\n"
+                            "3. Os dados clínicos estão disponíveis"
+                        )
+                    else:
+                        messagebox.showerror("Erro", f"Erro na classificação XGBoost:\n{str(ve)}")
+                return
 
             else:
                 # Para modelos de deep learning

@@ -27,6 +27,10 @@ from sklearn.metrics import classification_report, confusion_matrix
 import seaborn as sns
 from typing import Dict, Tuple, List, Optional
 from datetime import datetime
+import xgboost as xgb
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.model_selection import GridSearchCV, train_test_split
+import joblib
 
 # Configura GPU se disponível
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -43,6 +47,449 @@ patches_dir = base_dir / "patches"
 clinical_data_path = base_dir / "patient-clinical-data.csv"
 patches_certos = base_dir / "patches_certos.txt"
 
+class SegmentationXGBoostClassifier:
+    """
+    Classificador XGBoost que usa features de segmentação de núcleos
+    """
+    
+    def __init__(self, stats_csv_path=None, clinical_data_path=None):
+        # Caminhos dos arquivos
+        if stats_csv_path is None:
+            self.stats_csv_path = Path(__file__).parent / "segmentation" / "stats_imagens_certo.csv"
+        else:
+            self.stats_csv_path = Path(stats_csv_path)
+            
+        if clinical_data_path is None:
+            self.clinical_data_path = Path(__file__).parent / "patient-clinical-data.csv"
+        else:
+            self.clinical_data_path = Path(clinical_data_path)
+        
+        # Configuração do modelo
+        self.model = None
+        self.num_classes = 3
+        self.class_names = ['N0', 'N+(1-2)', 'N+(>2)']
+        self.feature_names = [
+            'num_nuclei', 'area_mean', 'area_std', 'circularity_mean', 
+            'circularity_std', 'eccentricity_mean', 'eccentricity_std',
+            'normalized_nn_distance_mean', 'normalized_nn_distance_std'
+        ]
+        
+        # Dados
+        self.stats_data = None
+        self.clinical_data = None
+        self.merged_data = None
+        
+        # Carrega dados
+        self._load_data()
+    
+    def _load_data(self):
+        """Carrega e processa os dados dos CSVs"""
+        print("Carregando dados de segmentação e clínicos...")
+        
+        # Verifica se arquivos existem
+        if not self.stats_csv_path.exists():
+            raise FileNotFoundError(f"Arquivo de estatísticas não encontrado: {self.stats_csv_path}")
+        if not self.clinical_data_path.exists():
+            raise FileNotFoundError(f"Arquivo de dados clínicos não encontrado: {self.clinical_data_path}")
+        
+        # Carrega dados de segmentação
+        self.stats_data = pd.read_csv(self.stats_csv_path)
+        print(f"Dados de segmentação carregados: {len(self.stats_data)} pacientes")
+        
+        # Carrega dados clínicos
+        self.clinical_data = pd.read_csv(self.clinical_data_path)
+        print(f"Dados clínicos carregados: {len(self.clinical_data)} pacientes")
+        
+        # Mapeia ALN status para códigos numéricos
+        aln_mapping = {
+            'N0': 0,
+            'N+(1-2)': 1, 
+            'N+(>2)': 2
+        }
+        
+        # Faz merge dos dados
+        self.merged_data = self.stats_data.merge(
+            self.clinical_data[['Patient ID', 'ALN status']], 
+            left_on='patient_id', 
+            right_on='Patient ID', 
+            how='left'
+        )
+        
+        # Remove pacientes sem dados clínicos
+        self.merged_data = self.merged_data.dropna(subset=['ALN status'])
+        
+        # Adiciona coluna de classe codificada
+        self.merged_data['ALN_encoded'] = self.merged_data['ALN status'].map(aln_mapping)
+        
+        print(f"Dados mesclados: {len(self.merged_data)} pacientes")
+        print("Distribuição das classes:")
+        class_dist = self.merged_data['ALN status'].value_counts()
+        for class_name, count in class_dist.items():
+            percentage = (count / len(self.merged_data)) * 100
+            print(f"  {class_name}: {count} ({percentage:.1f}%)")
+    
+    def prepare_features(self):
+        """Prepara as features para treinamento"""
+        print("\nPreparando features de segmentação...")
+        
+        # Seleciona apenas as colunas de features
+        X = self.merged_data[self.feature_names].values
+        y = self.merged_data['ALN_encoded'].values
+        
+        print(f"Features extraídas: {X.shape}")
+        print(f"Feature names: {self.feature_names}")
+        
+        # Verifica se há valores NaN
+        if np.isnan(X).any():
+            print("⚠️  Detectados valores NaN nas features. Preenchendo com média...")
+            X = pd.DataFrame(X, columns=self.feature_names).fillna(pd.DataFrame(X, columns=self.feature_names).mean()).values
+        
+        return X, y
+    
+    def split_data(self, test_size=0.2, val_size=0.2, random_state=42):
+        """Divide os dados em treino, validação e teste"""
+        print(f"\nDividindo dados (test_size={test_size}, val_size={val_size})...")
+        
+        X, y = self.prepare_features()
+        
+        # Primeira divisão: treino+val vs teste
+        X_temp, X_test, y_temp, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=random_state, stratify=y
+        )
+        
+        # Segunda divisão: treino vs validação
+        val_size_adjusted = val_size / (1 - test_size)  # Ajusta proporção
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_temp, y_temp, test_size=val_size_adjusted, random_state=random_state + 1, stratify=y_temp
+        )
+        
+        print(f"Divisão concluída:")
+        print(f"  Treino: {len(X_train)} amostras")
+        print(f"  Validação: {len(X_val)} amostras")
+        print(f"  Teste: {len(X_test)} amostras")
+        
+        # Verifica distribuição de classes
+        for split_name, y_split in [('Treino', y_train), ('Validação', y_val), ('Teste', y_test)]:
+            print(f"\n  Distribuição {split_name}:")
+            unique, counts = np.unique(y_split, return_counts=True)
+            for class_idx, count in zip(unique, counts):
+                percentage = (count / len(y_split)) * 100
+                print(f"    {self.class_names[class_idx]}: {count} ({percentage:.1f}%)")
+        
+        return (X_train, X_val, X_test), (y_train, y_val, y_test)
+    
+    def get_xgb_params(self, use_gpu=False):
+        """Retorna parâmetros otimizados para XGBoost"""
+        base_params = {
+            'objective': 'multi:softprob',
+            'num_class': self.num_classes,
+            'eval_metric': 'mlogloss',
+            'random_state': 42,
+            'n_estimators': 200,
+            'max_depth': 6,
+            'learning_rate': 0.1,
+            'subsample': 0.8,
+            'colsample_bytree': 0.8,
+            'reg_alpha': 0.1,
+            'reg_lambda': 1.0,
+        }
+        
+        if use_gpu:
+            try:
+                base_params.update({
+                    'tree_method': 'hist',
+                    'device': 'cuda',
+                })
+                print("✓ Usando GPU para XGBoost")
+            except:
+                base_params.update({
+                    'tree_method': 'hist',
+                    'device': 'cpu',
+                    'n_jobs': -1,
+                })
+                print("⚠️  GPU não disponível, usando CPU")
+        else:
+            base_params.update({
+                'tree_method': 'hist',
+                'device': 'cpu',
+                'n_jobs': -1,
+            })
+            print("ℹ️  Usando CPU para XGBoost")
+        
+        return base_params
+    
+    def train(self, use_gpu=False, use_grid_search=False, verbose=True):
+        """Treina o modelo XGBoost"""
+        print("\n" + "="*50)
+        print("TREINAMENTO DO MODELO XGBOOST")
+        print("="*50)
+        
+        # Divide os dados
+        (X_train, X_val, X_test), (y_train, y_val, y_test) = self.split_data()
+        
+        # Guarda dados de teste para avaliação posterior
+        self.X_test = X_test
+        self.y_test = y_test
+        
+        # Parâmetros base
+        base_params = self.get_xgb_params(use_gpu)
+        
+        if use_grid_search:
+            print("\nExecutando Grid Search...")
+            
+            # Grid de parâmetros para busca
+            param_grid = {
+                'n_estimators': [100, 200, 300],
+                'max_depth': [4, 6, 8],
+                'learning_rate': [0.05, 0.1, 0.15],
+                'subsample': [0.8, 0.9],
+                'colsample_bytree': [0.8, 0.9]
+            }
+            
+            # Cria modelo base
+            xgb_clf = xgb.XGBClassifier(**base_params)
+            
+            # Grid search
+            grid_search = GridSearchCV(
+                xgb_clf, 
+                param_grid, 
+                cv=5, 
+                scoring='accuracy', 
+                verbose=1 if verbose else 0, 
+                n_jobs=-1 if not use_gpu else 2,
+                error_score='raise'
+            )
+            
+            # Treina
+            grid_search.fit(X_train, y_train)
+            
+            print(f"Melhores parâmetros: {grid_search.best_params_}")
+            print(f"Melhor score CV: {grid_search.best_score_:.4f}")
+            
+            self.model = grid_search.best_estimator_
+            
+        else:
+            print("Treinando com parâmetros otimizados...")
+            
+            # Cria e treina modelo
+            self.model = xgb.XGBClassifier(**base_params)
+            
+            # Treina com early stopping
+            self.model.fit(
+                X_train, y_train,
+                eval_set=[(X_val, y_val)],
+                early_stopping_rounds=20,
+                verbose=verbose
+            )
+        
+        # Avalia no conjunto de validação
+        y_pred_val = self.model.predict(X_val)
+        val_accuracy = accuracy_score(y_val, y_pred_val)
+        
+        print(f"\n✓ Treinamento concluído!")
+        print(f"Acurácia na validação: {val_accuracy:.4f}")
+        
+        if verbose:
+            print("\nRelatório detalhado da validação:")
+            print(classification_report(y_val, y_pred_val, target_names=self.class_names))
+        
+        return self.model
+    
+    def evaluate_on_test(self, plot_confusion_matrix=True):
+        """Avalia o modelo no conjunto de teste"""
+        if self.model is None:
+            raise ValueError("Modelo não foi treinado ainda. Execute train() primeiro.")
+        
+        print("\n" + "="*50)
+        print("AVALIAÇÃO NO CONJUNTO DE TESTE")
+        print("="*50)
+        
+        # Predição
+        y_pred = self.model.predict(self.X_test)
+        
+        # Métricas
+        test_accuracy = accuracy_score(self.y_test, y_pred)
+        conf_matrix = confusion_matrix(self.y_test, y_pred)
+        
+        print(f"Acurácia no teste: {test_accuracy:.4f}")
+        print("\nRelatório de classificação:")
+        print(classification_report(self.y_test, y_pred, target_names=self.class_names))
+        
+        print("\nMatriz de confusão:")
+        print(conf_matrix)
+        
+        # Plot da matriz de confusão
+        if plot_confusion_matrix:
+            self.plot_confusion_matrix(conf_matrix)
+        
+        return y_pred, conf_matrix, test_accuracy
+    
+    def plot_confusion_matrix(self, conf_matrix, normalize=False):
+        """Plota matriz de confusão"""
+        plt.figure(figsize=(10, 8))
+        
+        if normalize:
+            conf_matrix_norm = conf_matrix.astype('float') / conf_matrix.sum(axis=1)[:, np.newaxis]
+            conf_matrix_display = conf_matrix_norm
+            fmt = '.2%'
+            title = 'Matriz de Confusão Normalizada - XGBoost Segmentação'
+        else:
+            conf_matrix_display = conf_matrix
+            fmt = 'd'
+            title = 'Matriz de Confusão - XGBoost Segmentação'
+        
+        # Cria heatmap
+        sns.heatmap(conf_matrix_display, 
+                   annot=True, 
+                   fmt=fmt,
+                   cmap='Blues',
+                   xticklabels=self.class_names,
+                   yticklabels=self.class_names,
+                   cbar_kws={'label': 'Proporção' if normalize else 'Contagem'})
+        
+        plt.title(title, fontsize=14, fontweight='bold')
+        plt.ylabel('Classe Real', fontsize=12)
+        plt.xlabel('Classe Predita', fontsize=12)
+        
+        # Adiciona estatísticas
+        total = np.sum(conf_matrix)
+        accuracy = np.trace(conf_matrix) / total
+        plt.figtext(0.02, 0.02, f'Acurácia Geral: {accuracy:.3f} | Total: {total}',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def get_feature_importance(self, plot=True):
+        """Retorna e plota importância das features"""
+        if self.model is None:
+            raise ValueError("Modelo não foi treinado ainda. Execute train() primeiro.")
+        
+        # Obtém importâncias
+        importances = self.model.feature_importances_
+        
+        # Cria DataFrame para facilitar visualização
+        feature_importance_df = pd.DataFrame({
+            'feature': self.feature_names,
+            'importance': importances
+        }).sort_values('importance', ascending=False)
+        
+        print("\nImportância das Features:")
+        print(feature_importance_df.to_string(index=False))
+        
+        if plot:
+            plt.figure(figsize=(10, 6))
+            sns.barplot(data=feature_importance_df, x='importance', y='feature', palette='viridis')
+            plt.title('Importância das Features - XGBoost Segmentação', fontsize=14, fontweight='bold')
+            plt.xlabel('Importância', fontsize=12)
+            plt.ylabel('Features', fontsize=12)
+            plt.tight_layout()
+            plt.show()
+        
+        return feature_importance_df
+    
+    def save_model(self, filepath=None):
+        """Salva o modelo treinado"""
+        if self.model is None:
+            raise ValueError("Modelo não foi treinado ainda. Execute train() primeiro.")
+        
+        if filepath is None:
+            filepath = Path(__file__).parent / "models" / "xgboost_segmentation_model.pkl"
+        else:
+            filepath = Path(filepath)
+        
+        # Cria diretório se não existir
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Salva modelo
+        joblib.dump(self.model, filepath)
+        print(f"✓ Modelo salvo em: {filepath}")
+        
+        return filepath
+    
+    def load_model(self, filepath=None):
+        """Carrega modelo salvo"""
+        if filepath is None:
+            filepath = Path(__file__).parent / "models" / "xgboost_segmentation_model.pkl"
+        else:
+            filepath = Path(filepath)
+        
+        if not filepath.exists():
+            raise FileNotFoundError(f"Modelo não encontrado: {filepath}")
+        
+        self.model = joblib.load(filepath)
+        print(f"✓ Modelo carregado de: {filepath}")
+        
+        return self.model
+    
+    def predict_single_patient(self, patient_id):
+        """Faz predição para um único paciente"""
+        if self.model is None:
+            raise ValueError("Modelo não foi treinado ainda. Execute train() primeiro.")
+        
+        # Busca dados do paciente
+        patient_data = self.merged_data[self.merged_data['patient_id'] == patient_id]
+        
+        if patient_data.empty:
+            raise ValueError(f"Paciente {patient_id} não encontrado nos dados.")
+        
+        # Prepara features
+        X_patient = patient_data[self.feature_names].values
+        
+        # Predição
+        prediction = self.model.predict(X_patient)[0]
+        probabilities = self.model.predict_proba(X_patient)[0]
+        
+        result = {
+            'patient_id': patient_id,
+            'predicted_class': self.class_names[prediction],
+            'predicted_class_code': prediction,
+            'probabilities': {
+                self.class_names[i]: prob for i, prob in enumerate(probabilities)
+            },
+            'confidence': max(probabilities)
+        }
+        
+        return result
+
+
+# Função de exemplo para treinar o modelo
+def train_xgboost_segmentation_model():
+    """Função de exemplo para treinar o modelo XGBoost com features de segmentação"""
+    
+    print("Iniciando treinamento do XGBoost com features de segmentação...")
+    
+    try:
+        # Inicializa classificador
+        classifier = SegmentationXGBoostClassifier()
+        
+        # Treina modelo
+        model = classifier.train(
+            use_gpu=False,  # Mude para True se tiver GPU compatível
+            use_grid_search=True,  # Mude para False para treinamento mais rápido
+            verbose=True
+        )
+        
+        # Avalia no teste
+        y_pred, conf_matrix, accuracy = classifier.evaluate_on_test(plot_confusion_matrix=True)
+        
+        # Mostra importância das features
+        feature_importance = classifier.get_feature_importance(plot=True)
+        
+        # Salva modelo
+        model_path = classifier.save_model()
+        
+        print(f"\n✅ Treinamento concluído com sucesso!")
+        print(f"📊 Acurácia final: {accuracy:.4f}")
+        print(f"💾 Modelo salvo em: {model_path}")
+        
+        return classifier
+        
+    except Exception as e:
+        print(f"\n❌ Erro durante o treinamento: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 class HENucleusSegmentation:
 
     # Adicione esta função para filtrar melhor:
