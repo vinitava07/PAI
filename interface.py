@@ -17,13 +17,8 @@ import subprocess
 import pandas as pd
 import os
 
-# Adiciona os diretórios necessários ao path
-sys.path.append(str(Path(__file__).parent))
-sys.path.append(str(Path(__file__).parent / "segmentation"))
-sys.path.append(str(Path(__file__).parent / "xgboost"))
-
 # Importa os módulos do projeto
-from process import HENucleusSegmentation
+from process import HENucleusSegmentation, SegmentationXGBoostClassifier
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 import pickle
@@ -244,13 +239,8 @@ class BreastCancerAnalysisGUI:
             # Fecha a janela
             self.root.withdraw()
             
-            # Inicia o treinamento no console
-            if model_type == "xgboost":
-                # Executa o script de treinamento do XGBoost
-                subprocess.run([sys.executable, "xgboost/xgboost_training.py"])
-            else:
-                # Para Inception e MobileNet, usa o script unificado
-                subprocess.run([sys.executable, "deep_models_unified.py", model_type])
+            # Inicia o treinamento no console usando process.py
+            subprocess.run([sys.executable, "process.py", model_type])
             
             # Reabre a janela após o treinamento
             self.root.deiconify()

@@ -42,7 +42,7 @@ else:
     print("Executando em CPU")
 
 
-base_dir = Path(__file__).parent.parent
+base_dir = Path(__file__).parent
 patches_dir = base_dir / "patches"
 clinical_data_path = base_dir / "patient-clinical-data.csv"
 patches_certos = base_dir / "patches_certos.txt"
@@ -55,7 +55,7 @@ class SegmentationXGBoostClassifier:
     def __init__(self, stats_csv_path=None, clinical_data_path=None):
         # Caminhos dos arquivos
         if stats_csv_path is None:
-            self.stats_csv_path = Path(__file__).parent / "segmentation" / "stats_imagens_certo.csv"
+            self.stats_csv_path = Path(__file__).parent / "stats_imagens_certo.csv"
         else:
             self.stats_csv_path = Path(stats_csv_path)
             
@@ -1780,52 +1780,52 @@ def train_deep_model(model_type="inception"):
     datasets = classifier.prepare_dataset(test_size=0.2)
     
     # Constrói e treina modelo
-    # print(f"\n🏗️ CONSTRUÇÃO E TREINAMENTO DO MODELO")
-    # history = classifier.train_model(
-    #     datasets=datasets,
-    #     epochs=epochs_fe,
-    #     fine_tune_epochs=epochs_ft
-    # )
+    print(f"\n🏗️ CONSTRUÇÃO E TREINAMENTO DO MODELO")
+    history = classifier.train_model(
+        datasets=datasets,
+        epochs=epochs_fe,
+        fine_tune_epochs=epochs_ft
+    )
     
-    # # Avalia modelo
-    # print("\n📈 AVALIAÇÃO FINAL")
-    # results = classifier.evaluate_model(datasets['test'])
+    # Avalia modelo
+    print("\n📈 AVALIAÇÃO FINAL")
+    results = classifier.evaluate_model(datasets['test'])
     
-    # # Visualizações
-    # print("\nGERANDO VISUALIZAÇÕES")
-    # classifier.plot_training_history(history)
-    # classifier.plot_confusion_matrix(results['confusion_matrix'])
+    # Visualizações
+    print("\nGERANDO VISUALIZAÇÕES")
+    classifier.plot_training_history(history)
+    classifier.plot_confusion_matrix(results['confusion_matrix'])
     
-    # # Salva modelo final
-    # model_path = base_dir / f"{classifier.model_name.lower()}_aln_final.h5"
-    # classifier.save_model(str(model_path))
+    # Salva modelo final
+    model_path = base_dir / f"{classifier.model_name.lower()}_aln_final.h5"
+    classifier.save_model(str(model_path))
     
-    # # Relatório final
-    # print(f"\n{'='*60}")
-    # print("📋 RELATÓRIO FINAL")
-    # print(f"{'='*60}")
-    # print(f"Modelo: {classifier.model_name}")
-    # print(f"Acurácia final: {results['accuracy']:.4f}")
-    # print(f"💾 Modelo salvo em: {model_path}")
+    # Relatório final
+    print(f"\n{'='*60}")
+    print("📋 RELATÓRIO FINAL")
+    print(f"{'='*60}")
+    print(f"Modelo: {classifier.model_name}")
+    print(f"Acurácia final: {results['accuracy']:.4f}")
+    print(f"💾 Modelo salvo em: {model_path}")
     
-    # # Métricas por classe
-    # report = results['classification_report']
-    # print("\nMétricas por classe:")
-    # for class_name in classifier.class_names:
-    #     if class_name in report:
-    #         metrics = report[class_name]
-    #         print(f"  {class_name}: P={metrics['precision']:.3f}, "
-    #               f"R={metrics['recall']:.3f}, "
-    #               f"F1={metrics['f1-score']:.3f}, "
-    #               f"N={metrics['support']}")
+    # Métricas por classe
+    report = results['classification_report']
+    print("\nMétricas por classe:")
+    for class_name in classifier.class_names:
+        if class_name in report:
+            metrics = report[class_name]
+            print(f"  {class_name}: P={metrics['precision']:.3f}, "
+                  f"R={metrics['recall']:.3f}, "
+                  f"F1={metrics['f1-score']:.3f}, "
+                  f"N={metrics['support']}")
     
-    # # Estatísticas do dataset
-    # print(f"\n📈 Estatísticas do treinamento:")
-    # print(f"  Total de patches: {len(datasets['all'])}")
-    # print(f"  Patches treino: {len(datasets['train'])}")
-    # print(f"  Patches validação: {len(datasets['val'])}")
-    # print(f"  Patches teste: {len(datasets['test'])}")
-    # print(f"  Épocas totais: {epochs_fe + epochs_ft}")
+    # Estatísticas do dataset
+    print(f"\n📈 Estatísticas do treinamento:")
+    print(f"  Total de patches: {len(datasets['all'])}")
+    print(f"  Patches treino: {len(datasets['train'])}")
+    print(f"  Patches validação: {len(datasets['val'])}")
+    print(f"  Patches teste: {len(datasets['test'])}")
+    print(f"  Épocas totais: {epochs_fe + epochs_ft}")
 
     return classifier, history, results
 
@@ -1858,7 +1858,33 @@ def main():
     
     print("\nProcesso concluído!")
 
-# Exemplo de uso
+# Exemplo de uso e ponto de entrada para treinamento via linha de comando
 if __name__ == "__main__":
-    # Para uma única imagem
-    segmentation_run(20)
+    # Verifica se foi passado argumento de linha de comando
+    if len(sys.argv) > 1:
+        model_type = sys.argv[1].lower()
+        
+        print(f"\n{'='*80}")
+        print(f"INICIANDO TREINAMENTO DO MODELO {model_type.upper()}")
+        print(f"{'='*80}\n")
+        
+        if model_type == "xgboost":
+            # Treina XGBoost com features de segmentação
+            print("Treinando XGBoost com features de segmentação...")
+            classifier = train_xgboost_segmentation_model()
+            
+        elif model_type in ["inception", "mobilenet"]:
+            # Treina modelo de deep learning
+            print(f"Treinando {model_type.upper()}...")
+            classifier, history, results = train_deep_model(model_type)
+            
+        else:
+            print(f"Erro: Modelo '{model_type}' não reconhecido.")
+            print("Modelos disponíveis: xgboost, inception, mobilenet")
+            sys.exit(1)
+            
+        print("\n✅ Treinamento concluído! Retornando à interface...")
+        
+    else:
+        # Comportamento padrão quando executado sem argumentos
+        segmentation_run(20)
