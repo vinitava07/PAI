@@ -808,7 +808,6 @@ class BreastCancerAnalysisGUI:
                         probabilities['N+(1-2)'],
                         probabilities['N+(>2)']
                     ]
-                    
                     # Mostra resultado
                     result_text = f"""
                     Classificação XGBoost concluída!
@@ -880,24 +879,25 @@ class BreastCancerAnalysisGUI:
                 prediction = np.argmax(probabilities)
 
             # Classes
-            classes = ['N0', 'N+(1-2)', 'N+(>2)']
-            predicted_class = classes[prediction]
-            
-            # Exibe resultado
-            result_text = f"""
-            Classificação concluída!
-            
-            Modelo utilizado: {model_type.upper()}
-            
-            Classe predita: {predicted_class}
-            
-            Probabilidades:
-            • N0: {probabilities[0]:.2%}
-            • N+(1-2): {probabilities[1]:.2%}
-            • N+(>2): {probabilities[2]:.2%}
-            """
-            
-            messagebox.showinfo("Resultado da Classificação", result_text)
+
+                classes = ['N0', 'N+(1-2)', 'N+(>2)']
+                predicted_class = classes[prediction]
+
+                # Exibe resultado
+                result_text = f"""
+                Classificação concluída!
+
+                Modelo utilizado: {model_type.upper()}
+
+                Classe predita: {predicted_class}
+
+                Probabilidades:
+                • N0: {probabilities[0]:.2%}
+                • N+(1-2): {probabilities[1]:.2%}
+                • N+(>2): {probabilities[2]:.2%}
+                """
+
+                messagebox.showinfo("Resultado da Classificação", result_text)
             
         except FileNotFoundError:
             messagebox.showerror(
