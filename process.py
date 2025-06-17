@@ -31,6 +31,7 @@ import xgboost as xgb
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from sklearn.model_selection import GridSearchCV, train_test_split
 import joblib
+from datetime import datetime
 
 # Configura GPU se disponível
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -41,7 +42,7 @@ if physical_devices:
 else:
     print("Executando em CPU")
 
-
+ct = datetime.now().strftime("%Y%m%d_%H%M%S")
 base_dir = Path(__file__).parent
 patches_dir = base_dir / "patches"
 clinical_data_path = base_dir / "patient-clinical-data.csv"
