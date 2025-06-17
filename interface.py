@@ -777,70 +777,70 @@ class BreastCancerAnalysisGUI:
             model_path = Path(__file__).parent / "models"
             
             if model_type == "xgboost":
-messagebox.showinfo(
-                "Processando",
-                "Classificando com XGBoost usando features de segmentação..."
-            )
+                messagebox.showinfo(
+                    "Processando",
+                    "Classificando com XGBoost usando features de segmentação..."
+                )
             
-            try:
-                # Extrai patient_id do caminho da imagem
-                patient_id = Path(self.current_image_path).parent.name
-                print(f"Patient ID extraído: {patient_id}")
-                
-                # Inicializa classificador XGBoost de segmentação
-                xgb_classifier = SegmentationXGBoostClassifier()
-                
-                # Carrega modelo salvo
-                model_file_path = model_path / "xgboost_segmentation_model.pkl"
-                if not model_file_path.exists():
-                    messagebox.showerror(
-                        "Modelo não encontrado",
-                        f"Modelo XGBoost não encontrado em: {model_file_path}\n\n"
-                        "Execute o treinamento do modelo XGBoost primeiro."
-                    )
-                    return
-                
-                # Carrega modelo
-                xgb_classifier.load_model(model_file_path)
-                
-                # Faz predição para o paciente
-                result = xgb_classifier.predict_single_patient(patient_id)
-                
-                # Extrai resultados
-                predicted_class = result['predicted_class']
-                probabilities = result['probabilities']
-                confidence = result['confidence']
-                
-                # Mapeia para o formato esperado pela interface
-                # Classes: ['N0', 'N+(1-2)', 'N+(>2)']
-                prob_array = [
-                    probabilities['N0'],
-                    probabilities['N+(1-2)'],
-                    probabilities['N+(>2)']
-                ]
-                
-                # Mostra resultado
-                result_text = f"""
-                Classificação XGBoost concluída!
-                
-                Paciente ID: {patient_id}
-                Classe predita: {predicted_class}
-                Confiança: {confidence:.2%}
-                
-                Probabilidades:
-                • N0: {probabilities['N0']:.2%}
-                • N+(1-2): {probabilities['N+(1-2)']:.2%}
-                • N+(>2): {probabilities['N+(>2)']:.2%}
-                
-                Features utilizadas:
-                • Número de núcleos
-                • Área média e desvio padrão
-                • Circularidade média e desvio padrão  
-                • Excentricidade média e desvio padrão
-                • Distância normalizada média e desvio padrão
-                """
-                
-                messagebox.showinfo("Resultado da Classificação XGBoost", result_text)
+                try:
+                    # Extrai patient_id do caminho da imagem
+                    patient_id = Path(self.current_image_path).parent.name
+                    print(f"Patient ID extraído: {patient_id}")
+                    
+                    # Inicializa classificador XGBoost de segmentação
+                    xgb_classifier = SegmentationXGBoostClassifier()
+                    
+                    # Carrega modelo salvo
+                    model_file_path = model_path / "xgboost_segmentation_model.pkl"
+                    if not model_file_path.exists():
+                        messagebox.showerror(
+                            "Modelo não encontrado",
+                            f"Modelo XGBoost não encontrado em: {model_file_path}\n\n"
+                            "Execute o treinamento do modelo XGBoost primeiro."
+                        )
+                        return
+                    
+                    # Carrega modelo
+                    xgb_classifier.load_model(model_file_path)
+                    
+                    # Faz predição para o paciente
+                    result = xgb_classifier.predict_single_patient(patient_id)
+                    
+                    # Extrai resultados
+                    predicted_class = result['predicted_class']
+                    probabilities = result['probabilities']
+                    confidence = result['confidence']
+                    
+                    # Mapeia para o formato esperado pela interface
+                    # Classes: ['N0', 'N+(1-2)', 'N+(>2)']
+                    prob_array = [
+                        probabilities['N0'],
+                        probabilities['N+(1-2)'],
+                        probabilities['N+(>2)']
+                    ]
+                    
+                    # Mostra resultado
+                    result_text = f"""
+                    Classificação XGBoost concluída!
+                    
+                    Paciente ID: {patient_id}
+                    Classe predita: {predicted_class}
+                    Confiança: {confidence:.2%}
+                    
+                    Probabilidades:
+                    • N0: {probabilities['N0']:.2%}
+                    • N+(1-2): {probabilities['N+(1-2)']:.2%}
+                    • N+(>2): {probabilities['N+(>2)']:.2%}
+                    
+                    Features utilizadas:
+                    • Número de núcleos
+                    • Área média e desvio padrão
+                    • Circularidade média e desvio padrão  
+                    • Excentricidade média e desvio padrão
+                    • Distância normalizada média e desvio padrão
+                    """
+                    
+                    messagebox.showinfo("Resultado da Classificação XGBoost", result_text)
                 except ValueError as ve:
                     if "não encontrado nos dados" in str(ve):
                         messagebox.showerror(
@@ -853,7 +853,7 @@ messagebox.showinfo(
                         )
                     else:
                         messagebox.showerror("Erro", f"Erro na classificação XGBoost:\n{str(ve)}")
-                return
+                    return
 
             else:
                 # Para modelos de deep learning
