@@ -404,7 +404,7 @@ class SegmentationXGBoostClassifier:
         
         # Salva modelo
         joblib.dump(self.model, filepath)
-        print(f"✓ Modelo salvo em: {filepath}")
+        print(f"Modelo salvo em: {filepath}")
         
         return filepath
     
@@ -419,7 +419,7 @@ class SegmentationXGBoostClassifier:
             raise FileNotFoundError(f"Modelo não encontrado: {filepath}")
         
         self.model = joblib.load(filepath)
-        print(f"✓ Modelo carregado de: {filepath}")
+        print(f"Modelo carregado de: {filepath}")
         
         return self.model
     
@@ -429,8 +429,7 @@ class SegmentationXGBoostClassifier:
             raise ValueError("Modelo não foi treinado ainda. Execute train() primeiro.")
         
         # Busca dados do paciente
-        patient_data = self.merged_data[self.merged_data['patient_id'] == patient_id]
-        
+        patient_data = self.merged_data[self.merged_data['patient_id'] == int(patient_id)]
         if patient_data.empty:
             raise ValueError(f"Paciente {patient_id} não encontrado nos dados.")
         
