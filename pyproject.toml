@@ -3,16 +3,23 @@ name = "pai"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
+    # TensorFlow: Necessário para o código de deep learning (Inception)
+    "tensorflow>=2.15.0,<2.16.0",
+    # NumPy: Versão compatível com TensorFlow (2.x ainda não suportado)
+    "numpy>=1.26.0,<1.27.0",
+    # Keras removido - usaremos tf.keras que vem com TensorFlow
     "matplotlib>=3.10.3",
-    "numpy>=2.2.6",
     "opencv-python>=4.11.0.86",
     "openpyxl>=3.1.5",
     "pandas>=2.2.3",
     "pillow>=11.2.1",
     "pyqt5>=5.15.11",
     "scikit-image>=0.25.2",
+    "scikit-learn>=1.6.1",
     "scipy>=1.15.3",
+    "seaborn>=0.13.2",
+    "xgboost>=3.0.2",
     "tk>=0.1.0",
 ]
